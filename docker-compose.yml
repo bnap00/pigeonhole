@@ -1,0 +1,57 @@
+# Pigeonhole: the app and its database. That is the whole stack.
+#
+#   make up       # writes .env on first run, builds, starts, waits until healthy
+#
+# The app migrates the schema on boot, serves the API, UI and MCP, drains the
+# job queue and runs the nightly evals, all in one container. Postgres
+# publishes no port: only the app can reach it.
+
+name: pigeonhole
+
+services:
+  app:
+    image: pigeonhole
+    build: .
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgres://pigeonhole:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (make init)}@postgres:5432/pigeonhole
+    # Loopback only by default. Put a TLS proxy in front before widening this.
+    ports:
+      - "${PH_BIND:-127.0.0.1:8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "dist/healthcheck.js", "/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    deploy:
+      resources: { limits: { memory: 768M } }
+    logging: &logging
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pigeonhole
+      POSTGRES_USER: pigeonhole
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (make init)}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pigeonhole -d pigeonhole"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    deploy:
+      resources: { limits: { memory: 1G } }
+    logging: *logging
+
+volumes:
+  pgdata: {}

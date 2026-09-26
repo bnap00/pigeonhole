@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.sample
+*.log
+backups/
+pipelines/
+coverage/
+.DS_Store
+*.tsbuildinfo

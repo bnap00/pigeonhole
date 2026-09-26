@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pigeonhole</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🕳️</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">◧</span>
+    <span>Pigeonhole</span>
+  </div>
+  <div class="topbar-right">
+    <span class="chip" id="provider-chip" title="Runtime model">…</span>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <h2>Pipelines</h2>
+      <button class="btn small" id="btn-new">New</button>
+    </div>
+    <ul id="pipeline-list" class="pipeline-list"></ul>
+    <div class="sidebar-foot">
+      <button class="btn ghost small" id="btn-templates">Template gallery</button>
+      <button class="btn ghost small" id="btn-keys">API keys</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div id="empty" class="empty">
+      <h1>No pipeline selected</h1>
+      <p>Pick one on the left, or start from a template.</p>
+    </div>
+
+    <section id="workspace" class="hidden">
+      <div class="workspace-head">
+        <div>
+          <h1 id="pipeline-title"></h1>
+          <p id="pipeline-sub" class="muted"></p>
+        </div>
+        <div class="actions">
+          <button class="btn" id="btn-save">Save draft</button>
+          <button class="btn primary" id="btn-publish">Publish version</button>
+        </div>
+      </div>
+
+      <nav class="tabs" id="tabs">
+        <button data-tab="build" class="active">Build</button>
+        <button data-tab="test">Test</button>
+        <button data-tab="runs">Runs</button>
+        <button data-tab="analytics">Analytics</button>
+        <button data-tab="versions">Versions</button>
+        <button data-tab="settings">Settings</button>
+      </nav>
+
+      <!-- ------------------------------------------------------ Build -->
+      <section class="tab" data-tab="build">
+        <div class="build-grid">
+          <div class="panel">
+            <h3>Description</h3>
+            <p class="hint">Plain English. The compiler turns this into a spec with test cases.</p>
+            <textarea id="description" rows="6" placeholder="Route support tickets to returns, shipping or billing. Flag angry customers."></textarea>
+            <div class="row">
+              <button class="btn primary" id="btn-compile">Compile</button>
+              <button class="btn ghost" id="btn-toggle-yaml">Show YAML</button>
+            </div>
+            <div id="compile-progress" class="progress hidden"></div>
+            <div id="compile-diff" class="diff hidden"></div>
+          </div>
+
+          <div class="panel graph-panel">
+            <div class="panel-head">
+              <h3>Graph</h3>
+              <span class="hint" id="graph-hint"></span>
+            </div>
+            <div id="graph" class="graph"></div>
+          </div>
+
+          <div class="panel" id="node-panel">
+            <h3 id="node-title">Node</h3>
+            <div id="node-editor" class="node-editor">
+              <p class="muted">Select a node in the graph to edit its instructions and options.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel hidden" id="yaml-panel">
+          <div class="panel-head">
+            <h3>Spec YAML</h3>
+            <span class="hint">Edits here and edits in the graph write to the same spec.</span>
+          </div>
+          <textarea id="yaml" spellcheck="false" rows="28"></textarea>
+          <div class="row">
+            <button class="btn" id="btn-apply-yaml">Apply YAML</button>
+            <span id="yaml-status" class="hint"></span>
+          </div>
+        </div>
+
+        <div class="panel" id="lint-panel"></div>
+      </section>
+
+      <!-- ------------------------------------------------------- Test -->
+      <section class="tab hidden" data-tab="test">
+        <div class="panel">
+          <h3>Try it</h3>
+          <p class="hint">Runs against the live runtime, the same code path as production.</p>
+          <textarea id="tryit-input" rows="4" placeholder='{ "body": "Shoes came in the wrong size, can I swap for a 10?" }'></textarea>
+          <div class="row">
+            <button class="btn primary" id="btn-tryit">Classify</button>
+            <span id="tryit-status" class="hint"></span>
+          </div>
+          <div id="tryit-result" class="result hidden"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Test cases</h3>
+            <div class="row">
+              <button class="btn" id="btn-eval">Run eval</button>
+              <button class="btn ghost small" id="btn-add-test">Add case</button>
+            </div>
+          </div>
+          <div id="eval-summary" class="hidden"></div>
+          <table class="table" id="tests-table">
+            <thead><tr><th>Name</th><th>Input</th><th>Expected</th><th>Actual</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------- Runs -->
+      <section class="tab hidden" data-tab="runs">
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Run log</h3>
+            <div class="row">
+              <label class="check"><input type="checkbox" id="runs-lowconf"> Low confidence only</label>
+              <label class="check"><input type="checkbox" id="runs-review"> Needs review</label>
+              <button class="btn ghost small" id="btn-refresh-runs">Refresh</button>
+            </div>
+          </div>
+          <p class="hint" id="runs-hint"></p>
+          <table class="table" id="runs-table">
+            <thead><tr><th>When</th><th>Input</th><th>Output</th><th>Conf.</th><th>Latency</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- -------------------------------------------------- Analytics -->
+      <section class="tab hidden" data-tab="analytics">
+        <div class="stat-row" id="stat-row"></div>
+        <div class="panel">
+          <h3>Runs per day</h3>
+          <div id="chart-runs" class="chart"></div>
+        </div>
+        <div class="panel">
+          <h3>Answer distribution</h3>
+          <div id="distribution"></div>
+        </div>
+      </section>
+
+      <!-- --------------------------------------------------- Versions -->
+      <section class="tab hidden" data-tab="versions">
+        <div class="panel">
+          <h3>Versions</h3>
+          <p class="hint">Versions are immutable. Pinning stops a pipeline following <code>latest</code>.</p>
+          <table class="table" id="versions-table">
+            <thead><tr><th>Version</th><th>Created</th><th>By</th><th>Eval</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <h3>Shadow mode</h3>
+          <p class="hint">The draft runs on live traffic in a worker. Callers keep getting the live answer.</p>
+          <div class="row">
+            <label class="check"><input type="checkbox" id="shadow-toggle"> Enabled</label>
+            <span id="shadow-agreement" class="hint"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- --------------------------------------------------- Settings -->
+      <section class="tab hidden" data-tab="settings">
+        <div class="panel">
+          <h3>Pipeline settings</h3>
+          <p class="hint">These map to the spec's <code>compose:</code> block.</p>
+          <div id="settings-form" class="form"></div>
+        </div>
+        <div class="panel">
+          <h3>OpenAPI</h3>
+          <p class="hint">A typed spec per pipeline, so a generated client checks the output union at compile time.</p>
+          <a class="btn ghost" id="link-openapi" target="_blank" rel="noreferrer">Open openapi.json</a>
+        </div>
+        <div class="panel danger">
+          <h3>Danger zone</h3>
+          <button class="btn danger" id="btn-archive">Archive pipeline</button>
+        </div>
+      </section>
+    </section>
+  </main>
+</div>
+
+<div id="modal" class="modal hidden"><div class="modal-body"><div id="modal-content"></div></div></div>
+<div id="toast" class="toast hidden"></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

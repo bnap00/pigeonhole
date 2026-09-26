@@ -1,0 +1,97 @@
+pigeonhole: 1
+id: lead-qualification
+description: >
+  Look at a public forum or social post and decide whether it is a buying
+  signal for a developer tools company, which product fits, and how ready the
+  person is to buy.
+
+input:
+  type: object
+  properties:
+    title: { type: string }
+    body: { type: string, maxLength: 20000 }
+    source: { type: string, description: "Where the post came from, e.g. reddit or hn" }
+  required: [body]
+
+model:
+  runtime: jev-latest
+  compiler: anthropic/claude-sonnet-5
+
+nodes:
+  is_buying_signal:
+    type: noul
+    instructions: >
+      The author is describing a problem they would plausibly pay software to
+      solve, or is actively looking for a tool. Idle complaints and general
+      discussion are not buying signals.
+
+  fit:
+    type: choice
+    when: is_buying_signal.p > 0.5
+    instructions: Which product line best fits the need this post describes?
+    criteria:
+      classification:
+        what: They need to categorise, route, label or triage text at volume.
+        not_for: They want to generate or rewrite text, which is not this.
+        examples:
+          - "We're drowning in support tickets and need to auto-route them."
+      observability:
+        what: "They need to see what their system is doing: logs, traces, metrics, alerting."
+        examples:
+          - "No idea why p99 jumped last night and our logs are useless."
+      data_pipeline:
+        what: They need to move, transform or sync data between systems.
+        examples:
+          - "Syncing Postgres to the warehouse is held together with cron."
+      none:
+        what: A real problem, but not one this company sells a product for.
+
+  readiness:
+    type: score
+    instructions: >
+      How close is this person to buying something? 0 is idle curiosity, 1 is
+      actively evaluating options, 2 is ready to buy or already has budget.
+    scale:
+      min: 0
+      max: 2
+      labels:
+        "0": Curious
+        "1": Evaluating
+        "2": Ready to buy
+
+  is_competitor_mention:
+    type: noul
+    instructions: The post names a competing commercial product by name.
+
+  score:
+    type: rule
+    expr: 'is_buying_signal.p > 0.6 && fit != "none" ? round(is_buying_signal.p * 50 + readiness.score * 25) : 0'
+
+output:
+  buying_signal: is_buying_signal.p
+  product: fit.choice
+  readiness: readiness.score
+  mentions_competitor: is_competitor_mention.p
+  lead_score: score.value
+
+tests:
+  - input: { body: "We're drowning in support tickets. Anyone using something to auto-route them by team?" }
+    expect: { product: classification }
+  - input: { body: "Just shipped my side project, feeling good!" }
+    expect: { product: null }
+  - input: { body: "Evaluating Datadog vs Grafana Cloud this quarter, budget approved." }
+    expect: { product: observability }
+  - input: { body: "Our Postgres to Snowflake sync is a pile of cron jobs and I hate it." }
+    expect: { product: data_pipeline }
+  - input: { body: "What's everyone's favourite mechanical keyboard?" }
+    expect: { product: null }
+  - input: { body: "Need to label 200k GitHub issues by area. Doing it by hand is not happening." }
+    expect: { product: classification }
+  - input: { body: "Why is observability tooling so expensive? Just venting." }
+    expect: { product: observability }
+  - input: { body: "Looking for recommendations, we have budget and need something by Q3." }
+    expect: { readiness: "2" }
+  - input: { body: "Airbyte keeps falling over on our largest table." }
+    expect: { product: data_pipeline }
+  - input: { body: "TIL about window functions. Neat." }
+    expect: { product: null }

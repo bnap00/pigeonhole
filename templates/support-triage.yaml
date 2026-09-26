@@ -1,0 +1,108 @@
+pigeonhole: 1
+id: support-triage
+description: >
+  Route support tickets for an online shoe store to returns, shipping or
+  billing. Flag angry customers. If it is unclear, send it to a human.
+
+input:
+  type: object
+  properties:
+    subject: { type: string }
+    body: { type: string, maxLength: 20000 }
+  required: [body]
+
+model:
+  runtime: jev-latest
+  compiler: anthropic/claude-sonnet-5
+
+nodes:
+  department:
+    type: choice
+    instructions: Which team should handle this ticket?
+    criteria:
+      returns:
+        what: Exchanges, refunds, wrong or damaged items, and anything about sending a product back.
+        not_for: Late deliveries with no request to return anything, which are shipping.
+        examples:
+          - "These arrived scuffed, can I swap them?"
+          - "Wrong size, I need a 10 instead of a 9."
+      shipping:
+        what: Where an order is, delivery delays, lost or misrouted packages, address changes.
+        not_for: Requests to send an item back, which are returns.
+        examples:
+          - "Tracking has not moved in six days."
+          - "Can you redirect this to my work address?"
+      billing:
+        what: Charges, invoices, double payments, refunds not yet received, payment method problems.
+        not_for: Requesting a return; only the money side belongs here.
+        examples:
+          - "I was charged twice for order 4412."
+          - "My card was declined but the order went through."
+      other:
+        what: Anything that fits none of the above, including product questions and partnership mail.
+    min_confidence: 0.35
+    on_low_confidence: human_review
+
+  return_reason:
+    type: choice
+    when: department == "returns"
+    instructions: Why does the customer want to return or exchange the item?
+    criteria:
+      wrong_size: { what: The item does not fit; the customer wants a different size. }
+      wrong_item: { what: The wrong product was sent, not merely the wrong size. }
+      damaged: { what: The item arrived broken, scuffed, torn or otherwise defective. }
+      changed_mind: { what: The item is as described but no longer wanted. }
+      other: { what: A return reason that fits none of the above. }
+
+  angry:
+    type: noul
+    instructions: The customer is angry, hostile, or threatening to stop being a customer.
+
+  urgency:
+    type: score
+    instructions: How urgently does this ticket need a human reply?
+    scale:
+      min: 0
+      max: 2
+      labels:
+        "0": Routine, can wait a day
+        "1": Should be answered today
+        "2": Needs attention now
+
+  priority:
+    type: rule
+    expr: 'angry.p > 0.7 || urgency.score >= 2 ? "high" : (urgency.score >= 1 ? "normal" : "low")'
+
+# Keep every run, so the demo's run log and review queue have something in
+# them. The default keeps only low-confidence runs.
+compose:
+  logging: { retain: all }
+
+output:
+  team: department.choice
+  reason: return_reason.choice
+  priority: priority.value
+  angry: angry.p
+  needs_review: department.low_confidence
+
+tests:
+  - input: { body: "Shoes came in the wrong size, can I swap for a 10?" }
+    expect: { team: returns, reason: wrong_size }
+  - input: { body: "I was charged twice. Fix it now or I'm done with you." }
+    expect: { team: billing, priority: high }
+  - input: { body: "Where is my package? Tracking hasn't updated in six days." }
+    expect: { team: shipping }
+  - input: { body: "The left shoe arrived with a torn seam." }
+    expect: { team: returns, reason: damaged }
+  - input: { body: "Do these run true to size?" }
+    expect: { team: other }
+  - input: { body: "You sent me sandals. I ordered boots." }
+    expect: { team: returns, reason: wrong_item }
+  - input: { body: "Please change the delivery address to my office." }
+    expect: { team: shipping }
+  - input: { body: "I want a refund for order 4412, the charge is still pending." }
+    expect: { team: billing }
+  - input: { body: "Bought these last week, changed my mind, never worn." }
+    expect: { team: returns, reason: changed_mind }
+  - input: { body: "Interested in stocking your brand in our store." }
+    expect: { team: other }

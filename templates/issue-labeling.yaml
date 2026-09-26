@@ -1,0 +1,99 @@
+pigeonhole: 1
+id: issue-labeling
+description: >
+  Label an incoming GitHub issue: what kind of issue it is, which area of the
+  codebase it concerns, and whether it is a good first issue.
+
+input:
+  type: object
+  properties:
+    title: { type: string }
+    body: { type: string, maxLength: 20000 }
+  required: [title]
+
+model:
+  runtime: jev-latest
+  compiler: anthropic/claude-sonnet-5
+
+nodes:
+  kind:
+    type: choice
+    instructions: What kind of issue is this?
+    criteria:
+      bug:
+        what: Something behaves differently from how it is documented or clearly intended.
+        not_for: A request for behaviour that does not exist yet, which is a feature.
+        examples:
+          - "Crash on startup when the config file is empty."
+      feature:
+        what: A request for new behaviour or a new capability.
+        examples:
+          - "Support reading credentials from the environment."
+      question:
+        what: Someone asking how to do something, with no claim that anything is broken.
+        examples:
+          - "How do I point this at a read replica?"
+      docs:
+        what: The documentation is missing, wrong or unclear; the code itself is fine.
+      performance:
+        what: Correct behaviour, but too slow or using too much memory.
+        not_for: Outright hangs and crashes, which are bugs.
+      other:
+        what: Anything that fits none of the above, including spam and duplicates.
+    min_confidence: 0.35
+    on_low_confidence: "default:other"
+
+  area:
+    type: choice
+    instructions: Which part of the project does this issue concern?
+    criteria:
+      api: { what: The HTTP API, its routes, request and response shapes, and status codes. }
+      cli: { what: The command line tool, its flags, output and exit codes. }
+      ui: { what: The browser interface. }
+      runtime: { what: Classification execution, the executor, providers and model calls. }
+      infra: { what: Docker, Compose, deployment, migrations, backups, CI. }
+      docs: { what: README, guides and reference documentation. }
+      other: { what: An area that fits none of the above. }
+
+  is_good_first_issue:
+    type: noul
+    instructions: >
+      This looks small, well-scoped and self-contained enough for a first-time
+      contributor: clear expected behaviour, little cross-cutting change.
+
+  is_regression:
+    type: noul
+    instructions: The author says this used to work in an earlier version.
+
+  labels:
+    type: rule
+    expr: 'kind.choice + "/" + area.choice'
+
+output:
+  kind: kind.choice
+  area: area.choice
+  label: labels.value
+  good_first_issue: is_good_first_issue.p
+  regression: is_regression.p
+
+tests:
+  - input: { title: "Crash on startup when config file is empty" }
+    expect: { kind: bug }
+  - input: { title: "Support reading credentials from the environment" }
+    expect: { kind: feature }
+  - input: { title: "How do I point this at a read replica?" }
+    expect: { kind: question }
+  - input: { title: "Typo in the quickstart guide" }
+    expect: { kind: docs, area: docs }
+  - input: { title: "Classification takes 4s per request on a 500-option node" }
+    expect: { kind: performance, area: runtime }
+  - input: { title: "docker compose up fails on ARM macs" }
+    expect: { area: infra }
+  - input: { title: "Add --json flag to the test command" }
+    expect: { kind: feature, area: cli }
+  - input: { title: "POST /v1/classify returns 500 on empty input instead of 400" }
+    expect: { kind: bug, area: api }
+  - input: { title: "This worked in 0.9 but breaks in 1.0" }
+    expect: { kind: bug }
+  - input: { title: "Buy cheap followers" }
+    expect: { kind: other }

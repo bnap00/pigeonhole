@@ -1,0 +1,98 @@
+pigeonhole: 1
+id: moderation
+description: >
+  Screen user comments before they are published. Decide whether a comment is
+  fine, needs a human look, or should be blocked, and say why.
+
+input:
+  type: object
+  properties:
+    body: { type: string, maxLength: 20000 }
+    context: { type: string, description: "The post or thread being replied to" }
+  required: [body]
+
+model:
+  runtime: jev-latest
+  compiler: anthropic/claude-sonnet-5
+
+nodes:
+  category:
+    type: choice
+    instructions: What kind of problem, if any, does this comment have?
+    criteria:
+      ok:
+        what: Ordinary participation, including blunt disagreement and strong criticism of ideas.
+        not_for: Attacks aimed at a person rather than an argument, which are harassment.
+        examples:
+          - "This benchmark is meaningless, the sample size is 12."
+      spam:
+        what: Unsolicited promotion, link dumps, affiliate pushes, repetitive advertising.
+        examples:
+          - "Make $400/day working from home, link in bio."
+      harassment:
+        what: "Attacks on a person: insults, demeaning language, targeted pile-ons, threats."
+        not_for: Harsh criticism of an argument or a product, which is ok.
+        examples:
+          - "You're an idiot and everyone here knows it."
+      hate:
+        what: Attacks or slurs directed at people for a protected characteristic.
+      self_harm:
+        what: The author describes intent to harm themselves, or encourages others to.
+      off_topic:
+        what: Coherent and civil, but unrelated to the thread it was posted in.
+      other:
+        what: A problem that fits none of the above categories.
+    min_confidence: 0.4
+    on_low_confidence: human_review
+
+  severity:
+    type: score
+    instructions: >
+      How severe is the problem, if there is one? 0 is no problem at all, 1 is
+      a borderline case a human should see, 2 is a clear violation.
+    scale:
+      min: 0
+      max: 2
+      labels:
+        "0": No problem
+        "1": Borderline
+        "2": Clear violation
+
+  is_targeting_minor:
+    type: noul
+    instructions: The comment appears to target or involve a minor.
+
+  action:
+    type: rule
+    expr: >
+      category.choice == "ok" ? "publish" :
+      (category.choice == "self_harm" || is_targeting_minor.p > 0.5 ? "escalate" :
+      (severity.score >= 2 ? "block" : "review"))
+
+output:
+  action: action.value
+  category: category.choice
+  severity: severity.score
+  needs_review: category.low_confidence
+
+tests:
+  - input: { body: "This benchmark is meaningless, the sample size is 12." }
+    expect: { category: ok, action: publish }
+  - input: { body: "Make $400/day working from home, link in bio!!!" }
+    expect: { category: spam }
+  - input: { body: "You're an idiot and everyone here knows it." }
+    expect: { category: harassment }
+  - input: { body: "Great write-up, the section on indexes helped a lot." }
+    expect: { category: ok, action: publish }
+  - input: { body: "Anyone else watching the game tonight?" , context: "Thread about Postgres indexes" }
+    expect: { category: off_topic }
+  - input: { body: "I completely disagree and I think the author is wrong about every point." }
+    expect: { category: ok }
+  - input: { body: "Buy followers cheap, DM me, best rates guaranteed." }
+    expect: { category: spam }
+  - input: { body: "Check out my blog post on the same topic, I'd value feedback." }
+    expect: { category: ok }
+  - input: { body: "Nobody here wants to read your garbage, go away." }
+    expect: { category: harassment }
+  - input: { body: "The docs are genuinely terrible and the maintainers should be ashamed of the state of them." }
+    expect: { category: ok }
