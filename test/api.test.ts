@@ -176,6 +176,12 @@ describe('control plane', () => {
     assert.ok(Array.isArray(report.calibration));
   });
 
+  test('a pipeline reports the model its served version runs on', async (t) => {
+    if (!available) return t.skip('no database');
+    const res = await app.inject({ method: 'GET', url: `/v1/pipelines/${id}`, headers: auth });
+    assert.equal(res.json().pipeline.runtime_model, 'jev-latest');
+  });
+
   test('the generated OpenAPI types the output as a union', async (t) => {
     if (!available) return t.skip('no database');
     const res = await app.inject({ method: 'GET', url: `/v1/pipelines/${id}/openapi.json`, headers: auth });
@@ -403,5 +409,56 @@ tests:
     const detail = (await app.inject({ method: 'GET', url: `/v1/pipelines/${pid}`, headers: auth })).json();
     const v1 = detail.versions.find((v: any) => v.version === 1);
     assert.equal(v1.eval_summary ?? null, null, 'a run that measured nothing must not become the version score');
+  });
+});
+
+describe('the builder works on the newest of draft and published version', () => {
+  const wid = `${id}-working`;
+  const spec = (instructions: string) => SPEC.replace(`id: ${id}`, `id: ${wid}`)
+    .replace('Which topic does this message concern?', instructions);
+
+  test('a draft with unpublished changes is what try and eval run; otherwise the latest version', async (t) => {
+    if (!available) return t.skip('no database');
+    const created = await app.inject({
+      method: 'POST', url: '/v1/pipelines', headers: auth,
+      payload: { id: wid, spec_yaml: spec('Which topic does this message concern?') },
+    });
+    assert.equal(created.statusCode, 201);
+    let detail = (await app.inject({ method: 'GET', url: `/v1/pipelines/${wid}`, headers: auth })).json();
+    assert.deepEqual(detail.working, { source: 'draft', version: null }, 'unpublished: the draft');
+
+    await app.inject({ method: 'POST', url: `/v1/pipelines/${wid}/versions`, headers: auth, payload: {} });
+    detail = (await app.inject({ method: 'GET', url: `/v1/pipelines/${wid}`, headers: auth })).json();
+    assert.deepEqual(detail.working, { source: 'version', version: 1 }, 'just published: the version');
+
+    const tried = await app.inject({
+      method: 'POST', url: `/v1/pipelines/${wid}/try`, headers: auth, payload: { input: { body: 'my invoice is wrong' } },
+    });
+    assert.equal(tried.json().target, 'v1');
+    const evaluated = (await app.inject({
+      method: 'POST', url: `/v1/pipelines/${wid}/evals?wait=true`, headers: auth, payload: { target: 'working' },
+    })).json();
+    assert.equal(evaluated.target, 'v1');
+    assert.equal(evaluated.results.length, evaluated.cases, 'every case is returned, passes included');
+    assert.ok(evaluated.results.every((r: any) => 'passed' in r && r.actual));
+
+    await app.inject({
+      method: 'PUT', url: `/v1/pipelines/${wid}`, headers: auth,
+      payload: { spec_yaml: spec('What is this message about?') },
+    });
+    detail = (await app.inject({ method: 'GET', url: `/v1/pipelines/${wid}`, headers: auth })).json();
+    assert.deepEqual(detail.working, { source: 'draft', version: null }, 'edited after publishing: the draft');
+
+    const triedDraft = await app.inject({
+      method: 'POST', url: `/v1/pipelines/${wid}/try`, headers: auth, payload: { input: { body: 'my invoice is wrong' } },
+    });
+    assert.equal(triedDraft.statusCode, 200);
+    assert.equal(triedDraft.json().target, 'draft');
+    assert.ok(triedDraft.json().output);
+    const draftEval = (await app.inject({
+      method: 'POST', url: `/v1/pipelines/${wid}/evals?wait=true`, headers: auth, payload: { target: 'working' },
+    })).json();
+    assert.equal(draftEval.target, 'draft');
+    assert.equal(draftEval.eval_id, undefined, 'a draft eval is not stored');
   });
 });

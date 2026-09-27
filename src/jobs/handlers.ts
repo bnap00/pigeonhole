@@ -151,7 +151,9 @@ const driftScanJob: JobHandler = async () => {
     if (!pipeline.latest_version) continue;
     await enqueue(
       'eval',
-      { pipeline: pipeline.id, model: 'jev-latest', trigger: 'nightly' },
+      // No model override: each pipeline is evaluated on its own runtime, so a
+      // pinned Jev stays pinned and a Laya pipeline is not silently run on Jev.
+      { pipeline: pipeline.id, trigger: 'nightly' },
       { dedupeKey: `nightly:${pipeline.id}:${new Date().toISOString().slice(0, 10)}` },
     );
     queued++;

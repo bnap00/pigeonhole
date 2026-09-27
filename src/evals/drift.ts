@@ -1,7 +1,8 @@
 /**
  * Drift detection.
  *
- * The nightly eval runs against `jev-latest` whether or not the spec changed.
+ * The nightly eval runs each pipeline on its own runtime model (`jev-latest`
+ * unless the spec says otherwise) whether or not the spec changed.
  * When the resolved model version moves AND accuracy falls by more than the
  * threshold, that is drift: the pipeline got worse without anyone touching it.
  *

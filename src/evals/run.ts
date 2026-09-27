@@ -61,7 +61,19 @@ export interface EvalReport {
     nodes: Record<string, unknown>;
   }[];
   errors: string[];
+  /** Every case in suite order, passes included, so a reader can see any answer in full. Capped. */
+  results: {
+    name?: string;
+    input: unknown;
+    expected: Record<string, unknown>;
+    passed: boolean;
+    actual?: Record<string, unknown>;
+    nodes?: Record<string, unknown>;
+    error?: string;
+  }[];
 }
+
+const MAX_RESULTS = 500;
 
 export interface RunEvalOptions {
   spec: PipelineSpec;
@@ -69,7 +81,7 @@ export interface RunEvalOptions {
   cases: EvalCase[];
   model?: string;
   concurrency?: number;
-  /** Defaults to OpenRouter; injectable for tests. */
+  /** Defaults to the provider router; injectable for tests. */
   provider?: Provider;
   onProgress?: (done: number, total: number, passed: number) => void | Promise<void>;
 }
@@ -100,6 +112,7 @@ export async function runEval(opts: RunEvalOptions): Promise<EvalReport> {
     calibration: [],
     failures: [],
     errors: [],
+    results: [],
   };
 
   const confidenceSamples: { confidence: number; correct: boolean }[] = [];
@@ -158,6 +171,16 @@ export async function runEval(opts: RunEvalOptions): Promise<EvalReport> {
           }
         }
 
+        if (index < MAX_RESULTS) {
+          report.results[index] = {
+            ...(testCase.name ? { name: testCase.name } : {}),
+            input: testCase.input,
+            expected: testCase.expect,
+            passed: casePassed,
+            actual: result.output,
+            nodes: result.nodes,
+          };
+        }
         if (casePassed) report.passed++;
         else if (report.failures.length < 200) {
           report.failures.push({
@@ -173,6 +196,15 @@ export async function runEval(opts: RunEvalOptions): Promise<EvalReport> {
         report.errored++;
         report.error_kinds[kind] = (report.error_kinds[kind] ?? 0) + 1;
         report.errors.push(`${testCase.name ?? `case ${index}`}: ${(err as Error).message}`);
+        if (index < MAX_RESULTS) {
+          report.results[index] = {
+            ...(testCase.name ? { name: testCase.name } : {}),
+            input: testCase.input,
+            expected: testCase.expect,
+            passed: false,
+            error: (err as Error).message,
+          };
+        }
       } finally {
         done++;
         if (opts.onProgress && (done % 5 === 0 || done === cases.length)) {

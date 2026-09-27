@@ -16,6 +16,9 @@ const state = {
   status: null,
   lastRun: null,      // probabilities from the last "Try it", shown on option cards
   evalResults: null,
+  tryMode: 'form',    // "Try it" input as a generated form, or raw JSON
+  tryInput: undefined, // the value both modes edit
+  tryFormKey: null,   // the input schema the form was built from
   token: localStorage.getItem('ph_token') || '',
 };
 
@@ -131,7 +134,7 @@ async function boot() {
   try {
     const status = await api('/v1/status');
     state.status = status;
-    $('#provider-chip').textContent = `OpenRouter · ${status.runtime_model}`;
+    $('#provider-chip').textContent = `Default: ${modelLabel(status.runtime_model)}`;
 
     await loadPipelines();
   } catch (err) {
@@ -162,6 +165,11 @@ async function loadPipelines() {
   }
 }
 
+/** A runtime model with where it runs: `Local · laya`, `OpenRouter · jev-latest`. */
+function modelLabel(model) {
+  return `${/^(?:convaiinnovations\/)?laya/i.test(model) ? 'Local' : 'OpenRouter'} · ${model}`;
+}
+
 async function openPipeline(id) {
   const data = await api(`/v1/pipelines/${encodeURIComponent(id)}`);
   state.current = data;
@@ -169,20 +177,51 @@ async function openPipeline(id) {
   state.selectedNode = null;
   state.lastRun = null;
   state.evalResults = null;
+  state.tryInput = undefined;
+  state.tryFormKey = null;
+  $('#tryit-input').value = '';
+  $('#tryit-result').classList.add('hidden');
+  $('#tryit-status').textContent = '';
+  $('#eval-summary').classList.add('hidden');
 
   $('#empty').classList.add('hidden');
   $('#workspace').classList.remove('hidden');
   $('#pipeline-title').textContent = data.pipeline.id;
   $('#pipeline-sub').textContent = `${data.versions.length} version(s)${
     data.pipeline.pinned_version ? ` · pinned to v${data.pipeline.pinned_version}` : ' · following latest'
-  }`;
+  }${data.pipeline.runtime_model ? ` · runs on ${modelLabel(data.pipeline.runtime_model)}` : ''}`;
   $('#description').value = data.pipeline.description ?? '';
   $('#link-openapi').href = `/v1/pipelines/${encodeURIComponent(id)}/openapi.json`;
 
   $$('#pipeline-list li').forEach((li) => li.classList.toggle('active', li.dataset.id === id));
 
   renderAll();
+  renderTargetNotes();
   void loadTab(state.tab);
+}
+
+/** Which spec "Try it" and evals run, in words. */
+function renderTargetNotes() {
+  const w = state.current?.working;
+  const text = dirty || w?.source === 'draft'
+    ? 'Runs the draft, which has unpublished changes.'
+    : w
+      ? `Runs v${w.version}, the latest version; the draft matches it.`
+      : 'Nothing to run yet: compile or write a spec first.';
+  $$('.target-note').forEach((el) => { el.textContent = text; });
+}
+
+/** After a save, the draft may now differ from the latest version, or match it again. */
+async function refreshWorking() {
+  const data = await api(`/v1/pipelines/${encodeURIComponent(state.current.pipeline.id)}`);
+  state.current.working = data.working;
+  state.current.unpublished_diff = data.unpublished_diff;
+  renderTargetNotes();
+}
+
+/** "Try it" and evals run the newest spec, so unsaved edits are saved first. */
+async function saveIfDirty() {
+  if (dirty) await $('#btn-save').onclick();
 }
 
 // ----------------------------------------------------------------- render
@@ -193,6 +232,7 @@ function renderAll() {
   renderYaml();
   renderLint();
   renderSettings();
+  renderTryForm();
 }
 
 function renderGraphPanel() {
@@ -427,6 +467,7 @@ let dirty = false;
 function markDirty() {
   dirty = true;
   $('#btn-save').textContent = 'Save draft •';
+  renderTargetNotes();
 }
 
 // ------------------------------------------------------------ save/publish
@@ -444,6 +485,7 @@ $('#btn-save').onclick = async () => {
     dirty = false;
     $('#btn-save').textContent = 'Save draft';
     renderAll();
+    await refreshWorking();
     toast('Draft saved', 'ok');
   } catch (err) {
     toast(err.message, 'bad');
@@ -479,6 +521,7 @@ $('#btn-apply-yaml').onclick = async () => {
     state.spec = structuredClone(res.pipeline.draft_spec);
     $('#yaml-status').textContent = 'Applied.';
     renderAll();
+    await refreshWorking();
     toast('YAML applied', 'ok');
   } catch (err) {
     $('#yaml-status').textContent = err.message;
@@ -639,28 +682,207 @@ function showDiff(compileId, finished) {
 
 // ----------------------------------------------------------------- try it
 
-$('#btn-tryit').onclick = async () => {
+/*
+ * "Try it" takes input as a form generated from the spec's input schema, or as
+ * raw JSON. Both edit `state.tryInput`, so switching keeps what was typed.
+ */
+
+const LONG_TEXT = /body|description|text|content|message|comment|note|detail|summary|transcript/i;
+
+function inputSchema() {
+  return state.spec?.input ?? state.current?.draft?.input ?? null;
+}
+
+/** One field per property of an object schema, or null to take the input as one text. */
+function formFields(schema) {
+  if (!schema || schema.type !== 'object' || !schema.properties) return null;
+  const required = new Set(schema.required ?? []);
+  return Object.entries(schema.properties).map(([name, raw]) => {
+    const s = raw ?? {};
+    const type = Array.isArray(s.type) ? s.type.find((t) => t !== 'null') : s.type;
+    const kind = Array.isArray(s.enum)
+      ? 'enum'
+      : type === 'boolean'
+        ? 'boolean'
+        : type === 'number' || type === 'integer'
+          ? 'number'
+          : type === 'array' && (s.items?.type === 'string' || !s.items)
+            ? 'lines'
+            : type === 'string' || type === undefined
+              ? (LONG_TEXT.test(name) || (s.maxLength ?? 0) > 200 ? 'text' : 'line')
+              : 'json';
+    return { name, schema: s, kind, type: type ?? 'string', required: required.has(name) };
+  });
+}
+
+/** An example input, for placeholders: the first test case's. */
+function exampleInput() {
+  return state.current?.test_cases?.[0]?.input ?? state.spec?.tests?.[0]?.input;
+}
+
+function renderTryForm() {
+  if (!state.current) return;
+  const schema = inputSchema();
+  const key = JSON.stringify(schema ?? null);
+  if (key === state.tryFormKey) return; // unchanged: keep what is typed
+  if (state.tryFormKey !== null && state.tryMode === 'form') {
+    try { state.tryInput = readTryForm(); } catch { /* keep the last good value */ }
+  }
+  state.tryFormKey = key;
+
+  const fields = formFields(schema);
+  const example = exampleInput();
+  const placeholder = (name) => {
+    const v = fields ? example?.[name] : example;
+    if (v === undefined || v === null) return '';
+    return typeof v === 'string' ? v : JSON.stringify(v);
+  };
+  const control = (f) => {
+    const id = `tf-${f.name}`;
+    const ph = esc(placeholder(f.name));
+    if (f.kind === 'enum') {
+      return `<select id="${id}" data-field="${esc(f.name)}">
+        ${f.required ? '' : '<option value="">—</option>'}
+        ${f.schema.enum.map((v) => `<option value="${esc(JSON.stringify(v))}">${esc(v)}</option>`).join('')}
+      </select>`;
+    }
+    if (f.kind === 'boolean') return `<label class="check"><input type="checkbox" id="${id}" data-field="${esc(f.name)}"> true</label>`;
+    if (f.kind === 'number') {
+      return `<input type="number" id="${id}" data-field="${esc(f.name)}" placeholder="${ph}"
+        ${f.schema.minimum !== undefined ? `min="${f.schema.minimum}"` : ''} ${f.schema.maximum !== undefined ? `max="${f.schema.maximum}"` : ''}
+        ${f.type === 'integer' ? 'step="1"' : 'step="any"'}>`;
+    }
+    if (f.kind === 'line') return `<input type="text" id="${id}" data-field="${esc(f.name)}" placeholder="${ph}">`;
+    const rows = f.kind === 'text' ? 4 : 3;
+    const hint = f.kind === 'lines' ? 'one per line' : f.kind === 'json' ? 'JSON' : '';
+    return `<textarea id="${id}" data-field="${esc(f.name)}" rows="${rows}" placeholder="${ph}"
+      class="${f.kind === 'json' ? 'mono' : ''}" title="${hint}"></textarea>`;
+  };
+
+  $('#tryit-form').innerHTML = fields
+    ? fields.length
+      ? fields.map((f) => `<div class="input-field">
+          <label for="tf-${esc(f.name)}">${esc(f.name)}${f.required ? ' <span class="req">*</span>' : ''}
+            <span class="type">${esc(f.kind === 'lines' ? 'list of strings' : f.kind === 'enum' ? 'one of' : f.type)}</span></label>
+          ${control(f)}
+          ${f.schema.description ? `<div class="hint">${esc(f.schema.description)}</div>` : ''}
+        </div>`).join('')
+      : '<p class="hint">The input schema has no properties; use JSON.</p>'
+    : `<div class="input-field"><label for="tf-__text">input <span class="type">text</span></label>
+        <textarea id="tf-__text" data-field="__text" rows="4" placeholder="${esc(placeholder())}"></textarea></div>`;
+
+  // A JSON-only schema has nothing to build a form from.
+  if (fields && !fields.length) setTryMode('json');
+  writeTryForm(state.tryInput);
+  $('#tryit-input').placeholder = example !== undefined ? JSON.stringify(example, null, 2) : '{ }';
+}
+
+/** The form's value, as the pipeline input. Throws, naming the field, on bad JSON. */
+function readTryForm() {
+  const fields = formFields(inputSchema());
+  if (!fields) return $('#tf-__text')?.value ?? '';
+  const out = {};
+  for (const f of fields) {
+    const el = document.getElementById(`tf-${f.name}`);
+    if (!el) continue;
+    if (f.kind === 'boolean') {
+      if (el.checked || f.required) out[f.name] = el.checked;
+      continue;
+    }
+    const raw = el.value;
+    if (raw === '' && !f.required) continue;
+    if (f.kind === 'enum') out[f.name] = raw === '' ? undefined : JSON.parse(raw);
+    else if (f.kind === 'number') out[f.name] = raw === '' ? undefined : Number(raw);
+    else if (f.kind === 'lines') out[f.name] = raw.split('\n').map((l) => l.trim()).filter(Boolean);
+    else if (f.kind === 'json') {
+      try { out[f.name] = JSON.parse(raw); } catch { throw new Error(`${f.name} is not valid JSON`); }
+    } else out[f.name] = raw;
+  }
+  return out;
+}
+
+function writeTryForm(value) {
+  const fields = formFields(inputSchema());
+  if (!fields) {
+    const el = $('#tf-__text');
+    if (el) el.value = typeof value === 'string' ? value : value === undefined ? '' : JSON.stringify(value);
+    return;
+  }
+  const obj = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  for (const f of fields) {
+    const el = document.getElementById(`tf-${f.name}`);
+    if (!el) continue;
+    const v = obj[f.name];
+    if (f.kind === 'boolean') el.checked = v === true;
+    else if (f.kind === 'enum') el.value = v === undefined ? (f.required ? el.options[0]?.value ?? '' : '') : JSON.stringify(v);
+    else if (f.kind === 'lines') el.value = Array.isArray(v) ? v.join('\n') : '';
+    else if (f.kind === 'json') el.value = v === undefined ? '' : JSON.stringify(v, null, 2);
+    else el.value = v === undefined ? '' : String(v);
+  }
+}
+
+/** The value in the JSON box. Plain text is accepted when the input is a string. */
+function readTryJson() {
   const raw = $('#tryit-input').value.trim();
-  if (!raw) return;
+  if (!raw) return formFields(inputSchema()) ? {} : '';
+  try {
+    return JSON.parse(raw);
+  } catch {
+    if (!formFields(inputSchema())) return raw;
+    throw new Error('That is not valid JSON');
+  }
+}
+
+function setTryMode(mode) {
+  if (mode === state.tryMode) return;
+  try {
+    state.tryInput = state.tryMode === 'form' ? readTryForm() : readTryJson();
+  } catch (err) {
+    return toast(err.message, 'bad');
+  }
+  state.tryMode = mode;
+  if (mode === 'json') {
+    $('#tryit-input').value = state.tryInput === undefined || state.tryInput === '' ? '' : JSON.stringify(state.tryInput, null, 2);
+  } else {
+    writeTryForm(state.tryInput);
+  }
+  $('#tryit-form').classList.toggle('hidden', mode !== 'form');
+  $('#tryit-input').classList.toggle('hidden', mode !== 'json');
+  $$('#tryit-mode button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+}
+
+$('#tryit-mode').onclick = (e) => {
+  const button = e.target.closest('button');
+  if (button) setTryMode(button.dataset.mode);
+};
+
+$('#btn-tryit').onclick = async () => {
   let input;
   try {
-    input = raw.startsWith('{') ? JSON.parse(raw) : { body: raw };
-  } catch {
-    return toast('That is not valid JSON', 'bad');
+    input = state.tryMode === 'form' ? readTryForm() : readTryJson();
+  } catch (err) {
+    return toast(err.message, 'bad');
   }
+  state.tryInput = input;
   $('#tryit-status').textContent = 'Classifying…';
   try {
-    const result = await api(`/v1/classify/${state.current.pipeline.id}`, {
+    await saveIfDirty();
+    const result = await api(`/v1/pipelines/${encodeURIComponent(state.current.pipeline.id)}/try`, {
       method: 'POST',
       body: JSON.stringify({ input }),
     });
     state.lastRun = result;
-    $('#tryit-status').textContent = `${result.latency_ms}ms · ${result.usage.decision_calls} call(s) · ${result.model}`;
+    $('#tryit-status').textContent =
+      `${result.target === 'draft' ? 'draft' : result.target} · ${result.latency_ms}ms · ` +
+      `${result.usage.decision_calls} call(s) · ${result.model}`;
     $('#tryit-result').classList.remove('hidden');
     $('#tryit-result').innerHTML = `
-      <pre>${esc(JSON.stringify(result.output, null, 2))}</pre>
-      <details><summary class="hint">Node answers, and the path taken</summary>
-        <pre>${esc(JSON.stringify(result.nodes, null, 2))}</pre>
+      <div class="detail-grid">
+        <div><div class="label">Output</div><pre>${esc(JSON.stringify(result.output, null, 2))}</pre></div>
+        <div><div class="label">Node answers</div>${renderNodeAnswers(result.nodes)}</div>
+      </div>
+      <details><summary class="hint">Full response</summary>
+        <pre>${esc(JSON.stringify(result, null, 2))}</pre>
       </details>`;
     // Probability bars on the option cards come from this run.
     renderNodeEditor();
@@ -670,6 +892,55 @@ $('#btn-tryit').onclick = async () => {
     $('#tryit-result').innerHTML = `<pre class="fail">${esc(err.message)}</pre>`;
   }
 };
+
+/**
+ * Each node's answer in one compact row: what it said, how sure, and the
+ * distribution behind it. Everything is in the title for the full numbers.
+ */
+function renderNodeAnswers(nodes) {
+  const entries = Object.entries(nodes ?? {});
+  if (!entries.length) return '<p class="hint">No node answers.</p>';
+  const fmt = (n) => (typeof n === 'number' ? (Math.round(n * 1000) / 1000).toString() : '—');
+  const rows = entries.map(([id, n]) => {
+    let answer;
+    if (n.error) answer = `<span class="fail">${esc(n.error)}</span>`;
+    else if (n.type === 'choice') answer = esc(n.choice ?? '—') + (n.also?.length ? ` <span class="hint">+ ${esc(n.also.join(', '))}</span>` : '');
+    else if (n.type === 'noul') answer = `p(yes) ${fmt(n.p)}`;
+    else if (n.type === 'score') answer = esc(n.score ?? '—');
+    else answer = `<span class="mono">${esc(JSON.stringify(n.value))}</span>`;
+    const tags = [
+      n.skipped ? '<span class="tag">gate closed</span>' : '',
+      n.low_confidence ? '<span class="tag warn">low confidence</span>' : '',
+      n.action ? `<span class="tag">${esc(n.action)}</span>` : '',
+    ].join('');
+    const probs = Object.entries(n.probabilities ?? {}).sort((a, b) => b[1] - a[1]);
+    const dist = probs.length
+      ? `<div class="dist" title="${esc(probs.map(([k, v]) => `${k}: ${v}`).join('\n'))}">${probs
+          .slice(0, 4)
+          .map(([k, v]) => `<span><i style="width:${Math.max(2, Math.round(v * 40))}px"></i>${esc(k)} ${fmt(v)}</span>`)
+          .join('')}${probs.length > 4 ? `<span class="hint">+${probs.length - 4}</span>` : ''}</div>`
+      : '';
+    return `<tr${n.skipped ? ' class="skipped"' : ''}>
+      <td class="mono">${esc(id)}</td>
+      <td>${answer} ${tags}</td>
+      <td>${fmt(n.confidence)}</td>
+      <td>${dist}</td>
+    </tr>`;
+  });
+  return `<table class="table compact"><thead><tr><th>Node</th><th>Answer</th><th>Conf.</th><th>Distribution</th></tr></thead>
+    <tbody>${rows.join('')}</tbody></table>`;
+}
+
+/** Rows that open a detail row beneath them. Clicks on buttons inside a row do not. */
+function expandable(tbody) {
+  tbody.onclick = (e) => {
+    if (e.target.closest('button, a, input')) return;
+    const row = e.target.closest('tr.expandable');
+    if (!row) return;
+    row.classList.toggle('open');
+    row.nextElementSibling?.classList.toggle('hidden');
+  };
+}
 
 // ------------------------------------------------------------------ evals
 
@@ -682,7 +953,7 @@ $('#btn-tryit').onclick = async () => {
  */
 const EVAL_ERROR_HINTS = {
   provider_error:
-    'OpenRouter could not answer; <code>make logs</code> shows why. ' +
+    'The model provider (OpenRouter, or your Laya server) could not answer; <code>make logs</code> shows why. ' +
     'Nothing here reflects on the pipeline. See docs/troubleshooting.md.',
   input_invalid:
     'These test inputs do not satisfy the pipeline\'s input schema, so they are rejected ' +
@@ -716,10 +987,15 @@ $('#btn-eval').onclick = async () => {
   $('#eval-summary').classList.remove('hidden');
   $('#eval-summary').innerHTML = '<p class="hint">Running…</p>';
   try {
-    const res = await api(`/v1/pipelines/${state.current.pipeline.id}/evals?wait=true`, {
+    await saveIfDirty();
+    const res = await api(`/v1/pipelines/${encodeURIComponent(state.current.pipeline.id)}/evals?wait=true`, {
       method: 'POST',
-      body: JSON.stringify({}),
+      body: JSON.stringify({ target: 'working' }),
     });
+    if (res.status === 'queued') {
+      $('#eval-summary').innerHTML = `<p class="hint">${res.cases} cases is too many to run inline; the eval is queued. Its result appears under Versions.</p>`;
+      return;
+    }
     state.evalResults = res;
     // No accuracy when no case reached the model: a dash, never a 0%.
     const pct = res.accuracy === null ? '—' : `${(res.accuracy * 100).toFixed(1)}%`;
@@ -728,6 +1004,9 @@ $('#btn-eval').onclick = async () => {
       <div class="stat-row">
         <div class="stat"><div class="label">Accuracy</div><div class="value">${pct}</div></div>
         <div class="stat"><div class="label">Passed</div><div class="value">${res.passed}/${res.cases}</div></div>
+        <div class="stat"><div class="label">Ran on</div><div class="value" style="font-size:14px">${
+          res.target === 'draft' ? 'the draft <span class="hint">(not stored)</span>' : esc(res.target ?? '')
+        }</div></div>
         <div class="stat"><div class="label">Model</div><div class="value" style="font-size:14px">${esc(res.resolved_model)}</div></div>
         ${calib && calib.n ? `<div class="stat"><div class="label">Correct at conf ≥ 0.8</div><div class="value">${(calib.rate * 100).toFixed(0)}%</div></div>` : ''}
       </div>
@@ -739,33 +1018,77 @@ $('#btn-eval').onclick = async () => {
           : ''
       }
       ${renderEvalErrors(res)}`;
-    renderTests(res.failures ?? []);
+    renderTests();
   } catch (err) {
     $('#eval-summary').innerHTML = `<p class="fail">${esc(err.message)}</p>`;
   }
 };
 
-function renderTests(failures = []) {
+/**
+ * The test cases, with the last eval's answer beside each. Rows stay one line;
+ * clicking one opens the full input, expectation, output and node answers.
+ */
+function renderTests() {
   const tests = state.current?.test_cases ?? [];
-  const failureFor = (input) =>
-    failures.find((f) => JSON.stringify(f.input) === JSON.stringify(input));
+  const res = state.evalResults;
+  // Older responses carry failures only; a case missing from them passed.
+  const results = res?.results ?? null;
+  const unused = new Set(results ? results.keys() : []);
+  const resultFor = (t) => {
+    if (!res) return null;
+    const key = JSON.stringify(t.input);
+    if (results) {
+      for (const i of unused) {
+        if (results[i] && JSON.stringify(results[i].input) === key) {
+          unused.delete(i);
+          return results[i];
+        }
+      }
+      return null;
+    }
+    const failure = (res.failures ?? []).find((f) => JSON.stringify(f.input) === key);
+    return failure ? { ...failure, passed: false } : { passed: true };
+  };
 
-  $('#tests-table tbody').innerHTML = tests.length
+  const tbody = $('#tests-table tbody');
+  tbody.innerHTML = tests.length
     ? tests
         .map((t) => {
-          const failure = failureFor(t.input);
-          return `<tr>
+          const r = resultFor(t);
+          const actual = !r
+            ? '<td class="hint">—</td>'
+            : r.error
+              ? `<td class="truncate fail">error: ${esc(r.error)}</td>`
+              : r.passed
+                ? `<td class="truncate pass">✓ <span class="hint">${esc(r.actual ? JSON.stringify(r.actual) : '')}</span></td>`
+                : `<td class="truncate fail">${esc(JSON.stringify(r.actual))}</td>`;
+          return `<tr class="expandable">
             <td>${esc(t.name ?? '')}<div class="hint">${esc(t.source)}</div></td>
             <td class="truncate">${esc(JSON.stringify(t.input))}</td>
             <td class="truncate">${esc(JSON.stringify(t.expected))}</td>
-            <td class="truncate ${failure ? 'fail' : 'pass'}">${
-              failure ? esc(JSON.stringify(failure.actual)) : '✓'
-            }</td>
+            ${actual}
             <td><button class="btn ghost small" data-del-test="${t.id}">×</button></td>
-          </tr>`;
+          </tr>
+          <tr class="detail hidden"><td colspan="5">
+            <div class="detail-grid three">
+              <div><div class="label">Input</div><pre>${esc(JSON.stringify(t.input, null, 2))}</pre></div>
+              <div><div class="label">Expected</div><pre>${esc(JSON.stringify(t.expected, null, 2))}</pre></div>
+              <div><div class="label">Actual</div>${
+                !r
+                  ? '<p class="hint">Run the eval to see what the model answers.</p>'
+                  : r.error
+                    ? `<pre class="fail">${esc(r.error)}</pre>`
+                    : r.actual
+                      ? `<pre class="${r.passed ? '' : 'fail'}">${esc(JSON.stringify(r.actual, null, 2))}</pre>`
+                      : '<p class="hint">Passed.</p>'
+              }</div>
+            </div>
+            ${r?.nodes ? `<div class="label">Node answers</div>${renderNodeAnswers(r.nodes)}` : ''}
+          </td></tr>`;
         })
         .join('')
     : '<tr><td colspan="5" class="hint">No test cases. Compile generates them, or add one by hand.</td></tr>';
+  expandable(tbody);
 
   $$('[data-del-test]').forEach((btn) => {
     btn.onclick = async () => {
@@ -815,17 +1138,26 @@ async function loadRuns() {
             .map((n) => n.confidence)
             .filter((c) => typeof c === 'number');
           const min = conf.length ? Math.min(...conf) : null;
-          return `<tr>
+          return `<tr class="expandable">
             <td class="hint">${new Date(r.created_at).toLocaleString()}</td>
             <td class="truncate">${esc(JSON.stringify(r.input ?? '(not retained)'))}</td>
             <td class="truncate">${esc(JSON.stringify(r.output))}</td>
             <td class="${r.low_confidence ? 'fail' : ''}">${min === null ? '—' : min.toFixed(2)}</td>
             <td>${r.latency_ms}ms</td>
             <td><button class="btn ghost small" data-correct="${esc(r.id)}">Correct</button></td>
-          </tr>`;
+          </tr>
+          <tr class="detail hidden"><td colspan="6">
+            <div class="detail-grid">
+              <div><div class="label">Input</div><pre>${esc(JSON.stringify(r.input ?? '(not retained)', null, 2))}</pre></div>
+              <div><div class="label">Output</div><pre>${esc(JSON.stringify(r.output, null, 2))}</pre></div>
+            </div>
+            <div class="label">Node answers</div>${renderNodeAnswers(r.node_answers)}
+            <p class="hint mono">${esc(r.id)} · v${esc(r.version ?? '?')} · ${esc(r.model ?? '')}</p>
+          </td></tr>`;
         })
         .join('')
     : '<tr><td colspan="6" class="hint">No retained runs. Retention is per pipeline in Settings.</td></tr>';
+  expandable($('#runs-table tbody'));
 
   $$('[data-correct]').forEach((btn) => {
     btn.onclick = () => correctRun(btn.dataset.correct, runs.find((r) => r.id === btn.dataset.correct));

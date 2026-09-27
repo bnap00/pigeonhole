@@ -20,6 +20,26 @@ export async function registerEvalRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { id: string }; Body: Body; Querystring: { wait?: string } }>(
     '/v1/pipelines/:id/evals',
     async (req, reply) => {
+      // `target: "working"` is the builder's: the draft when it has unpublished
+      // changes, else the latest version. A draft's eval is run inline and not
+      // stored, since it scores no version and must not feed drift.
+      if (req.body?.target === 'working') {
+        const working = await repo.resolveWorkingSpec(req.params.id);
+        if (working.source === 'draft') {
+          const cases = await collectCases(req.params.id, working.spec);
+          if (cases.length === 0) throw problem('conflict', 'this pipeline has no test cases to evaluate');
+          const report = await runEval({ spec: working.spec, version: 0, cases, model: req.body?.model });
+          return {
+            target: 'draft',
+            ...summary(report),
+            top_confusions: topConfusions(report),
+            failures: report.failures.slice(0, 25),
+            results: report.results,
+          };
+        }
+        req.body.version = working.version;
+      }
+
       const serving = await repo.resolveServingVersion(req.params.id, req.body?.version ?? null);
       const cases = await collectCases(req.params.id, serving.spec);
       if (cases.length === 0) {
@@ -36,7 +56,14 @@ export async function registerEvalRoutes(app: FastifyInstance): Promise<void> {
         });
         const { persistEval } = await import('../../evals/run.js');
         const evalId = await persistEval(report, 'manual');
-        return { eval_id: evalId, ...summary(report), top_confusions: topConfusions(report), failures: report.failures.slice(0, 25) };
+        return {
+          eval_id: evalId,
+          target: `v${serving.version}`,
+          ...summary(report),
+          top_confusions: topConfusions(report),
+          failures: report.failures.slice(0, 25),
+          results: report.results,
+        };
       }
 
       const jobId = await enqueue('eval', {

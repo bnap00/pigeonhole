@@ -3,13 +3,16 @@ import type { FastifyInstance } from 'fastify';
 import { authGuard } from '../app.js';
 import { requireScope } from '../auth.js';
 import * as repo from '../../db/repo.js';
-import { lint, parseSpecYaml, specToYaml, validate } from '../../spec/parse.js';
+import { lint, parseSpecYaml, resolveSettings, specToYaml, validate } from '../../spec/parse.js';
 import type { PipelineSpec } from '../../spec/types.js';
 import { invalidateSpec } from '../../cache/specs.js';
 import { problem } from '../../errors.js';
 import { enqueue } from '../../queue/index.js';
 import { openApiFor } from '../openapi.js';
 import { diffSpecs } from '../../compiler/diff.js';
+import { classify } from '../../runtime/classify.js';
+import { execute } from '../../executor/execute.js';
+import { provider } from '../../provider/index.js';
 
 /** Request bodies arrive unvalidated; each handler checks what it needs. */
 type Body = Record<string, any>;
@@ -70,6 +73,9 @@ export async function registerPipelineRoutes(app: FastifyInstance): Promise<void
       const versions = await repo.listVersions(req.params.id, 20);
       const draft = pipeline.draft_spec as PipelineSpec | null;
       const latest = versions[0]?.spec ?? null;
+      const serving = versions.length ? await repo.resolveServingVersion(req.params.id) : null;
+      const runtimeSpec = serving?.spec ?? draft;
+      const working = draft || latest ? await repo.resolveWorkingSpec(req.params.id) : null;
 
       return {
         pipeline: {
@@ -78,8 +84,12 @@ export async function registerPipelineRoutes(app: FastifyInstance): Promise<void
           pinned_version: pipeline.pinned_version,
           owner: pipeline.owner,
           updated_at: pipeline.updated_at,
+          /** The decision model live traffic runs on: the served version's, else the draft's. */
+          runtime_model: runtimeSpec ? resolveSettings(runtimeSpec as PipelineSpec).runtimeModel : null,
         },
         draft: draft,
+        /** What "Try it" and the builder's evals run: the draft if it has unpublished changes, else the latest version. */
+        working: working ? { source: working.source, version: working.version } : null,
         draft_yaml: draft ? specToYaml(draft) : null,
         lint: draft ? lint(draft) : [],
         /** What a save would change, so the UI never publishes blind. */
@@ -95,6 +105,23 @@ export async function registerPipelineRoutes(app: FastifyInstance): Promise<void
       };
     },
   );
+
+  /**
+   * The builder's "Try it": one input through the working spec (see
+   * `resolveWorkingSpec`). A published version goes through the runtime path,
+   * so the run is recorded like any other; a draft is executed directly and
+   * leaves no trace in runs or analytics.
+   */
+  app.post<{ Params: { id: string }; Body: Body }>('/v1/pipelines/:id/try', async (req) => {
+    if (req.body?.input === undefined) throw problem('input_invalid', 'request body must contain `input`');
+    const working = await repo.resolveWorkingSpec(req.params.id);
+    if (working.source === 'version') {
+      const result = await classify({ pipelineId: req.params.id, version: working.version, input: req.body.input });
+      return { target: `v${working.version}`, ...result };
+    }
+    const result = await execute({ spec: working.spec, version: 0, input: req.body.input, provider: provider() });
+    return { target: 'draft', ...result };
+  });
 
   app.put<{ Params: { id: string }; Body: Body }>('/v1/pipelines/:id', async (req) => {
     await repo.requirePipeline(req.params.id);

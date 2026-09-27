@@ -55,7 +55,8 @@ Responses carry `run_id`, `output`, per-node answers with probabilities,
 | Versions | `POST /v1/pipelines/:id/versions` (publish) · `GET /v1/pipelines/:id/versions/:version` · `POST /v1/pipelines/:id/pin` |
 | Compile | `POST /v1/pipelines/:id/compile` · `GET …/compile/:compileId` · `GET …/compile/:compileId/events` (SSE) · `POST …/compile/:compileId/accept` · `GET /v1/pipelines/:id/compiles` |
 | Tests | `POST /v1/pipelines/:id/tests` · `DELETE /v1/pipelines/:id/tests/:testId` |
-| Evals | `POST /v1/pipelines/:id/evals` (`?wait=true` for ≤ 50 cases) · `GET …/evals` · `GET …/evals/:evalId` · `POST /v1/pipelines/:id/compare` |
+| Evals | `POST /v1/pipelines/:id/evals` (`?wait=true` for ≤ 50 cases; `{"target": "working"}` runs the draft if it has unpublished changes, unstored, else the latest version) · `GET …/evals` · `GET …/evals/:evalId` · `POST /v1/pipelines/:id/compare` |
+| Try | `POST /v1/pipelines/:id/try` — one input through the draft if it has unpublished changes, else the latest version; a draft run is not recorded |
 | Review | `GET /v1/pipelines/:id/review` · `POST …/review/:runId/promote` · `GET /v1/pipelines/:id/feedback` |
 | Shadow | `GET/POST /v1/pipelines/:id/shadow` — run a draft beside the live version |
 | Analytics | `GET /v1/pipelines/:id/analytics` · `GET …/analytics/:node/confidence` · `GET /v1/pipelines/:id/runs` |

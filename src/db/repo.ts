@@ -176,6 +176,41 @@ export async function resolveServingVersion(
   return latest;
 }
 
+export interface WorkingSpec {
+  spec: PipelineSpec;
+  /** The published version it is, or null for a draft with unpublished changes. */
+  version: number | null;
+  source: 'draft' | 'version';
+}
+
+/**
+ * What the builder tries and evaluates: whichever is newer of the draft and
+ * the latest published version. Publishing copies the spec into the draft, so
+ * a draft that differs from the latest version was edited after it.
+ */
+export async function resolveWorkingSpec(pipelineId: string): Promise<WorkingSpec> {
+  const pipeline = await requirePipeline(pipelineId);
+  const latest = await latestVersion(pipelineId);
+  const draft = pipeline.draft_spec;
+  if (draft && (!latest || !sameSpec(draft, latest.spec))) {
+    return { spec: draft, version: null, source: 'draft' };
+  }
+  if (!latest) throw problem('conflict', `pipeline "${pipelineId}" has no spec yet; compile or write one first`);
+  return { spec: latest.spec, version: latest.version, source: 'version' };
+}
+
+/** Deep equality that ignores key order and the version stamp a publish adds. */
+function sameSpec(a: PipelineSpec, b: PipelineSpec): boolean {
+  const canon = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(canon)
+      : v && typeof v === 'object'
+        ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon((v as Record<string, unknown>)[k])]))
+        : v;
+  const strip = ({ version: _version, ...rest }: PipelineSpec) => rest;
+  return JSON.stringify(canon(strip(a))) === JSON.stringify(canon(strip(b)));
+}
+
 // --------------------------------------------------------------- test cases
 
 export interface TestCaseRow {

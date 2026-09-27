@@ -98,8 +98,25 @@ code, pre, textarea, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consol
 .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
 .panel.danger { border-color: var(--bad); }
 
-.build-grid { display: grid; grid-template-columns: 300px 1fr 320px; gap: 14px; align-items: start; }
-@media (max-width: 1200px) { .build-grid { grid-template-columns: 1fr; } }
+/* minmax(0, …) and min-width: 0 let a wide graph scroll inside its panel
+   instead of widening the column and pushing the node editor off screen.
+   Below 1600px the description takes its own row, so the graph keeps room. */
+.build-grid {
+  display: grid; gap: 14px; align-items: start;
+  grid-template-columns: 300px minmax(0, 1fr) 320px;
+  grid-template-areas: "desc graph node";
+}
+.build-grid > * { min-width: 0; margin-bottom: 0; }
+.build-grid { margin-bottom: 14px; }
+.build-grid > .desc-panel { grid-area: desc; }
+.build-grid > .graph-panel { grid-area: graph; }
+.build-grid > #node-panel { grid-area: node; }
+@media (max-width: 1599px) {
+  .build-grid { grid-template-columns: minmax(0, 1fr) 320px; grid-template-areas: "desc desc" "graph node"; }
+}
+@media (max-width: 1200px) {
+  .build-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "desc" "graph" "node"; }
+}
 
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 .check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
@@ -157,6 +174,66 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--a
 .table tr:last-child td { border-bottom: none; }
 .table .truncate { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Fixed columns, so long JSON truncates instead of squeezing the names. */
+#tests-table, #runs-table { table-layout: fixed; }
+#tests-table th:nth-child(1) { width: 22%; }
+#tests-table th:nth-child(2) { width: 27%; }
+#tests-table th:nth-child(3) { width: 18%; }
+#tests-table th:nth-child(5), #runs-table th:nth-child(6) { width: 90px; }
+#runs-table th:nth-child(1) { width: 170px; }
+#runs-table th:nth-child(4) { width: 70px; }
+#runs-table th:nth-child(5) { width: 80px; }
+#tests-table .truncate, #runs-table .truncate { max-width: none; }
+
+/* A compact row that opens a detail row beneath it. */
+.table tr.expandable { cursor: pointer; }
+.table tr.expandable:hover td { background: var(--panel-2); }
+.table tr.expandable.open td { background: var(--panel-2); border-bottom-color: transparent; }
+.table tr.expandable td:first-child { position: relative; padding-left: 20px; }
+.table tr.expandable td:first-child::before {
+  content: "▸"; position: absolute; left: 6px; top: 7px; color: var(--muted); font-size: 10px;
+}
+.table tr.expandable.open td:first-child::before { content: "▾"; }
+.table tr.detail > td { background: var(--panel-2); padding: 4px 12px 12px; }
+.table tr.detail pre, .result pre {
+  background: var(--bg); padding: 8px 10px; border-radius: 8px; font-size: 12px; margin: 4px 0 10px;
+  white-space: pre-wrap; word-break: break-word; max-height: 360px; overflow: auto;
+}
+
+.table.compact { font-size: 12px; }
+.table.compact td, .table.compact th { padding: 4px 6px; }
+.table.compact tr.skipped td { opacity: .55; }
+
+.detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.detail-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 900px) { .detail-grid, .detail-grid.three { grid-template-columns: 1fr; } }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-top: 6px; }
+
+.dist { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.dist span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.dist i { display: inline-block; height: 6px; background: var(--accent); border-radius: 3px; }
+
+.tag {
+  display: inline-block; font-size: 10px; padding: 0 6px; border-radius: 999px; margin-left: 4px;
+  border: 1px solid var(--line); color: var(--muted);
+}
+.tag.warn { color: var(--warn); border-color: var(--warn); }
+
+/* Segmented toggle: Form | JSON */
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button {
+  background: transparent; color: var(--muted); border: none; padding: 4px 12px; font-size: 12px; cursor: pointer;
+}
+.seg button.active { background: var(--panel-2); color: var(--text); }
+
+/* "Try it" form built from the input schema. */
+.input-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px 14px; margin-top: 8px; }
+.input-field label { display: block; font-size: 12px; font-weight: 500; margin-bottom: 4px; }
+.input-field label .req { color: var(--bad); }
+.input-field label .type { color: var(--muted); font-weight: 400; font-size: 11px; margin-left: 4px; }
+.input-field .hint { margin-top: 3px; }
+.input-field:has(textarea[rows="4"]) { grid-column: 1 / -1; }
+
 .pass { color: var(--ok); }
 .fail { color: var(--bad); }
 
@@ -170,10 +247,7 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--a
 .diff ul { margin: 6px 0 0; padding-left: 18px; }
 
 .result { margin-top: 10px; }
-.result pre {
-  background: var(--panel-2); padding: 10px; border-radius: 8px;
-  overflow-x: auto; font-size: 12px; margin: 6px 0;
-}
+
 
 .warning-list { list-style: none; padding: 0; margin: 0; }
 .warning-list li { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
