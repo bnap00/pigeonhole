@@ -20,7 +20,7 @@ COMPOSE_PROFILES=laya
 ```
 
 then run `make up`. The first start builds the image and downloads the
-English and multilingual checkpoints (about 3 GB) into the `laya-models`
+English and multilingual checkpoints (about 1.5 GB) into the `laya-models`
 volume. `make up` waits until both are loaded, which can take several minutes
 the first time. Later starts take seconds.
 
@@ -37,14 +37,6 @@ The image is rebuilt with CUDA 12.6 wheels, which need driver 560 or newer.
 With a 575+ driver you can set `LAYA_TORCH_INDEX=cu130` instead. Two
 checkpoints take about 4 GB of GPU memory once they have served requests.
 
-The support-triage template (four questions in one call), measured on a
-6-core desktop:
-
-| | English checkpoint | Multilingual checkpoint | Memory |
-| --- | --- | --- | --- |
-| GPU (RTX 3050) | 100–170 ms | 50 ms | about 4 GB of GPU memory |
-| CPU (4 threads) | about 2 s | about 0.75 s | about 3.2 GB of RAM |
-
 **Running it on the host instead.** Docker cannot use Apple silicon's GPU,
 so on a Mac `laya-serve` is faster outside Docker:
 
@@ -56,6 +48,18 @@ LAYA_MODELS=english,multilingual .laya/bin/laya-serve     # listens on :8000
 Set `LAYA_URL=http://host.docker.internal:8000` in `.env` and leave
 `COMPOSE_PROFILES` unset. On Linux, also add
 `extra_hosts: ["host.docker.internal:host-gateway"]` to the `app` service.
+
+## Requirements
+
+Measured on an Intel Core i5-8500 (6 cores), 32 GB of RAM and an RTX 3050
+(6 GB):
+
+| | CPU only | NVIDIA GPU |
+| --- | --- | --- |
+| Memory | about 3.2 GB of RAM | about 2.6 GB of RAM and 4 GB of GPU memory |
+| Disk | 1.3 GB image, 1.5 GB of weights | 7 GB image (CUDA), 1.5 GB of weights |
+| Start, weights cached | about 10 s | about 20 s |
+| Needs | Docker | Docker, NVIDIA Container Toolkit, driver 560+ |
 
 ## Use it
 
@@ -85,6 +89,39 @@ To compare it with Jev on a pipeline's own test cases:
 pigeonhole diff support-triage --models laya,jev-latest
 ```
 
+## How it compares
+
+Every test case of the five templates plus a 24-case Reddit self-promotion
+pipeline, 74 in all, sent one at a time on the machine above:
+
+| | Jev | Laya, GPU | Laya, CPU (4 threads) |
+| --- | --- | --- | --- |
+| Correct | 69 (93%) | 40 (54%) | 40 (54%) |
+| Median latency | 340 ms | 100 ms | 2.3 s |
+| p95 latency | 410 ms | 114 ms | 5.2 s |
+| Cost | $0.0027, about $37 per million | none | none |
+
+| Pipeline | Jev | Laya |
+| --- | --- | --- |
+| moderation | 9/10 | 10/10 |
+| email-routing | 9/10 | 6/10 |
+| support-triage | 10/10 | 6/10 |
+| issue-labeling | 10/10 | 4/10 |
+| lead-qualification | 9/10 | 4/10 |
+| Reddit self-promotion | 22/24 | 10/24 |
+
+The support-triage cases translated into Hindi: Jev 9/10 at 400 ms, Laya
+6/10 at 56 ms on the GPU and 870 ms on the CPU. `laya` sent every one to the
+multilingual checkpoint on its own.
+
+Laya does best when each option is described in a line or two. Rewriting the
+Reddit pipeline's paragraph-long option descriptions as one sentence each
+took Laya from 10/24 to 13/24; Jev stayed at 22/24. Forcing
+`laya-multilingual` on the English suites did worse than `laya` (27/74).
+
+The comparison favours Jev: the compiler dry-runs every spec's tests against
+Jev and repairs what Jev gets wrong, so these specs were tuned on it.
+
 ## Limits
 
 - **Short inputs.** The English checkpoint reads 512 tokens, about 320 of them
@@ -95,7 +132,7 @@ pigeonhole diff support-triage --models laya,jev-latest
   options in a node and more than 32 levels on a scale.
 - **Zero-shot.** The shipped checkpoints are not trained on your task. On the
   bundled templates' own test cases Laya passes 30 of 50: all of moderation,
-  and 4 to 6 of 10 on the others. Run `pigeonhole test` before sending
+  and 4 to 6 of 10 on the others (see [How it compares](#how-it-compares)). Run `pigeonhole test` before sending
   traffic to a pipeline on Laya, and check that its `min_confidence`
   thresholds still route what you expect.
 - **One request at a time.** `laya-serve` runs one forward pass at a time and

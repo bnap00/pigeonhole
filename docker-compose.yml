@@ -58,7 +58,7 @@ services:
 
   # Laya behind laya-serve, for the laya* runtime models. The app reaches it at
   # http://laya:8000 (LAYA_URL); it publishes no port. The first start
-  # downloads two checkpoints (about 3 GB) into the laya-models volume.
+  # downloads two checkpoints (about 1.5 GB) into the laya-models volume.
   laya:
     profiles: [laya]
     image: pigeonhole-laya
