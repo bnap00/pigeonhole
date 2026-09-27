@@ -4,10 +4,11 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-> **Weekend project.** An experiment in building a classification pipeline on
-> [Jev](https://openrouter.ai/docs/guides/community/jev), a decision model.
-> [Laya](https://www.layaaimodel.com/) may be next, in the same setup. It
-> works end to end and is fun to try, but it is not production software. See
+> **Proof of concept.** A weekend project testing one idea: turn a plain-English
+> description into a classification pipeline that runs on a decision model,
+> [Jev](https://openrouter.ai/docs/guides/community/jev) on OpenRouter or
+> [Laya](https://www.layaaimodel.com/) on your own machine. It works end to
+> end and is fun to try, but it is not production software. See
 > [Status](#status).
 
 You need Docker and an [OpenRouter key](https://openrouter.ai/keys).
@@ -21,7 +22,8 @@ Open http://localhost:8080 and paste the admin token `make up` printed. A
 demo pipeline is already published, so you can classify something straight
 away.
 
-Two containers: the app, and Postgres. One model provider: OpenRouter.
+Two containers: the app, and Postgres. One model provider: OpenRouter. To
+classify on your own machine instead, add a third: [Laya](docs/laya.md).
 
 ---
 
@@ -33,7 +35,7 @@ for on every request. Pigeonhole splits it in two:
 | | When | What happens |
 | --- | --- | --- |
 | **Compile** | Rarely | A reasoning model on OpenRouter turns your description into a precise spec: questions, options, their definitions, disambiguation rules, and test cases. |
-| **Run** | Every request | A decision model (Jev, through OpenRouter's Decisions API) evaluates input against that spec and returns a typed answer with a calibrated probability for every option. |
+| **Run** | Every request | A decision model (Jev, through OpenRouter's Decisions API, or Laya, running locally) evaluates input against that spec and returns a typed answer with a calibrated probability for every option. |
 
 You write:
 
@@ -78,17 +80,18 @@ call**, at a few thousandths of a cent.
 
 ## Status
 
-This is a weekend project: an experiment in building a Jev pipeline, not a
-product.
+This is a proof of concept, built over a weekend to see whether the idea holds
+up. It is not a product.
 
 **Works today:** compiling a description into a spec, classifying through
-OpenRouter's Decisions API, batch and async classify, test cases and evals,
-drift alerts, versions and pinning, the builder UI, the CLI and MCP.
+OpenRouter's Decisions API or a local Laya, batch and async classify, test
+cases and evals, drift alerts, versions and pinning, the builder UI, the CLI
+and MCP.
 
 **Not there yet:**
 
-- One model provider (OpenRouter) and one decision model family (Jev). The
-  model layer is built to take others; Laya may be next.
+- Only two decision model families: Jev on OpenRouter, and Laya self-hosted
+  ([docs/laya.md](docs/laya.md)). The compiler always needs OpenRouter.
 - Single instance only. Rate limits and caches live in memory.
 - No automatic backups, no TLS, no multi-user accounts: one admin token.
 - The API and spec format may change between versions without a migration
@@ -139,6 +142,7 @@ reverse proxy in front before exposing it beyond the machine.
 | [Writing a pipeline](docs/pipelines.md) | The spec format, node types, expressions |
 | [Evals and drift](docs/evals.md) | Tests, accuracy, calibration, drift alerts |
 | [API and clients](docs/api.md) | REST, CLI, MCP, generated clients |
+| [Laya](docs/laya.md) | Classifying locally with Laya, on CPU or GPU |
 | [Architecture](docs/architecture.md) | How it works, and how to add a model |
 | [Alternative stacks](docs/alternative-stacks.md) | Ideas for running it elsewhere, such as Cloudflare Workers (not built) |
 | [Troubleshooting](docs/troubleshooting.md) | The problems you are likely to hit first |

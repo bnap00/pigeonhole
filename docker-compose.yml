@@ -5,6 +5,9 @@
 # The app migrates the schema on boot, serves the API, UI and MCP, drains the
 # job queue and runs the nightly evals, all in one container. Postgres
 # publishes no port: only the app can reach it.
+#
+# Optional: `laya`, a local decision model, starts only with COMPOSE_PROFILES=laya
+# in .env. docker-compose.gpu.yml puts it on an NVIDIA GPU. See docs/laya.md.
 
 name: pigeonhole
 
@@ -53,5 +56,39 @@ services:
       resources: { limits: { memory: 1G } }
     logging: *logging
 
+  # Laya behind laya-serve, for the laya* runtime models. The app reaches it at
+  # http://laya:8000 (LAYA_URL); it publishes no port. The first start
+  # downloads two checkpoints (about 3 GB) into the laya-models volume.
+  laya:
+    profiles: [laya]
+    image: pigeonhole-laya
+    build:
+      context: docker/laya
+      args:
+        TORCH_INDEX: ${LAYA_TORCH_INDEX:-cpu}
+    restart: unless-stopped
+    # Not env_file: the model server has no business holding the OpenRouter key.
+    environment:
+      LAYA_DEVICE: ${LAYA_DEVICE:-cpu}
+      # Build the checkpoints before listening, so healthy means ready.
+      LAYA_PRELOAD: "1"
+      LAYA_MODELS: ${LAYA_MODELS:-english,multilingual}
+      LAYA_THREADS: ${LAYA_THREADS:-4}
+      OMP_NUM_THREADS: ${LAYA_THREADS:-4}
+      LAYA_API_KEY: ${LAYA_API_KEY:-}
+    volumes:
+      - laya-models:/home/laya/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15m
+      start_interval: 5s
+    deploy:
+      resources: { limits: { memory: 6G } }
+    logging: *logging
+
 volumes:
   pgdata: {}
+  laya-models: {}

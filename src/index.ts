@@ -26,7 +26,7 @@ async function main(): Promise<void> {
     throw new Error('PH_ADMIN_TOKEN is not set. Run `make init`, or set it in .env.');
   }
   if (!config.openrouterApiKey) {
-    log.warn('OPENROUTER_API_KEY is not set: compiling and classifying will fail until it is');
+    log.warn('OPENROUTER_API_KEY is not set: compiling, and classifying on Jev, will fail until it is');
   }
 
   await waitForDatabase();

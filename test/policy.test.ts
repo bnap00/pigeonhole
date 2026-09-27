@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSpecYaml } from '../src/spec/parse.ts';
-import { readDecisionResponse } from '../src/provider/openrouter.ts';
+import { readDecisionResponse } from '../src/provider/wire.ts';
 
 const withLowConfidence = (action: string) => `
 pigeonhole: 1
@@ -81,6 +81,15 @@ test('Jev model names are decision models; chat models are not', () => {
     assert.ok(isDecisionModel(m), m);
   }
   for (const m of ['openai/gpt-4o-mini', 'anthropic/claude-sonnet-5', 'jevil', 'jev-latest:free', 'my-jev', 'jev--x', '']) {
+    assert.ok(!isDecisionModel(m), m);
+  }
+});
+
+test('Laya model names are decision models', () => {
+  for (const m of ['laya', 'laya-english', 'laya-multilingual', 'laya-typed-decisions', 'convaiinnovations/laya-multilingual', 'LAYA']) {
+    assert.ok(isDecisionModel(m), m);
+  }
+  for (const m of ['laya-rl-agent', 'layla', 'laya-latest', 'someone/laya', 'laya-']) {
     assert.ok(!isDecisionModel(m), m);
   }
 });

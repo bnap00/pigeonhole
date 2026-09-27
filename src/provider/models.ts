@@ -9,11 +9,11 @@
  * enforced here, before any request is sent.
  *
  * To add a decision model, add its family below with the provider that serves
- * it. A family served somewhere other than OpenRouter (Laya on a local server,
- * say) also needs a provider module, registered in `provider/index.ts`.
+ * it. A family served somewhere other than OpenRouter (as Laya is) also needs a
+ * provider module, registered in `provider/index.ts`.
  */
 
-export type DecisionProviderName = 'openrouter';
+export type DecisionProviderName = 'openrouter' | 'laya';
 
 interface DecisionFamily {
   name: string;
@@ -30,6 +30,14 @@ const FAMILIES: DecisionFamily[] = [
     provider: 'openrouter',
     pattern: /^(?:[a-z0-9-]+\/)?jev(?:-[a-z0-9.]+)*$/i,
     examples: 'jev-latest, or a pinned version such as typesafe/jev-1.13',
+  },
+  {
+    // laya (the server picks a checkpoint per request), or one checkpoint:
+    // laya-english, laya-multilingual, laya-typed-decisions
+    name: 'Laya',
+    provider: 'laya',
+    pattern: /^(?:convaiinnovations\/)?laya(?:-(?:english|multilingual|typed-decisions))?$/i,
+    examples: 'laya, or a checkpoint such as laya-multilingual; self-hosted',
   },
 ];
 

@@ -1,6 +1,7 @@
 # Architecture
 
-Two containers: **app** and **postgres**. The app is one Node process that
+Two containers: **app** and **postgres**, plus **laya** when the `laya`
+compose profile is on ([Laya](laya.md)). The app is one Node process that
 serves the API, the builder UI and MCP, drains the job queue, and runs the
 nightly schedule. Postgres holds all state, including the queue.
 
@@ -8,6 +9,7 @@ nightly schedule. Postgres holds all state, including the queue.
 
 ```
 client ──▶ app ──▶ OpenRouter Decisions API (Jev, POST /api/alpha/decisions)
+            │   └─▶ or laya-serve (Laya, POST /v1/systemone), same wire format
             │
             ├─ spec cache (in memory, invalidated over Postgres LISTEN/NOTIFY)
             ├─ answer cache (optional, per pipeline, in memory)
@@ -47,18 +49,19 @@ the queue. The whole schema is one file, `migrations/001_init.sql`.
 ## Models
 
 Classifications are answered only by **decision models**, never by a chat
-model. `src/provider/models.ts` lists each decision-model family (today: Jev)
-and the provider that serves it (today: OpenRouter's Decisions API).
-`src/provider/index.ts` sends every `decide()` call to the right provider for
-its model.
+model. `src/provider/models.ts` lists each decision-model family and the
+provider that serves it: Jev on OpenRouter's Decisions API, Laya on a local
+`laya-serve`. `src/provider/index.ts` sends every `decide()` call to the right
+provider for its model. Both speak the same wire format, read and written by
+`src/provider/wire.ts`.
 
 To add a model:
 
 - **Served by OpenRouter's Decisions API:** add its family to `models.ts`.
-- **Served somewhere else** (for example Laya on a local server): add the
-  family with a new provider name, write a provider module next to
-  `openrouter.ts` whose `decide()` maps the request and response to
-  `DecisionRequest`/`DecisionResponse`, and register it in `index.ts`.
+- **Served somewhere else**: add the family with a new provider name, write a
+  provider module next to `openrouter.ts` whose `decide()` maps the request
+  and response to `DecisionRequest`/`DecisionResponse`, and register it in
+  `index.ts`. `laya.ts` is the example.
 
 ## Source layout
 
@@ -66,7 +69,8 @@ To add a model:
 | --- | --- |
 | `src/spec` | The spec format, sandboxed expressions, the linter |
 | `src/executor` | Layering and execution |
-| `src/provider` | Decision-model registry, provider routing, the OpenRouter client |
+| `src/provider` | Decision-model registry, provider routing, the OpenRouter and Laya clients |
+| `docker/laya` | The image for the optional `laya` service |
 | `src/compiler` | The five resumable passes |
 | `src/evals` | Accuracy, calibration, drift, webhooks |
 | `src/analytics` | Run telemetry and the analytics queries |

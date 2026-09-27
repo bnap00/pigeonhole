@@ -37,12 +37,18 @@ export const config = {
   databaseUrl: str('DATABASE_URL', 'postgres://pigeonhole:pigeonhole@localhost:5432/pigeonhole'),
 
   /**
-   * OpenRouter answers everything today: a decision model (Jev) through the
-   * Decisions API for classifications, and a reasoning model through chat
-   * completions for the compiler.
+   * OpenRouter answers the compiler's chat calls, and classifications on Jev
+   * through the Decisions API. Laya runs locally instead (below).
    */
   openrouterApiKey: str('OPENROUTER_API_KEY', ''),
   defaultRuntimeModel: str('PH_RUNTIME_MODEL', 'jev-latest'),
+
+  /**
+   * A self-hosted Laya server (`laya-serve`), for the laya* runtime models.
+   * The bundled `laya` service answers at the default; see docs/laya.md.
+   */
+  layaUrl: str('LAYA_URL', 'http://laya:8000').replace(/\/+$/, ''),
+  layaApiKey: str('LAYA_API_KEY', ''),
   defaultCompilerModel: str('PH_COMPILER_MODEL', 'anthropic/claude-sonnet-5'),
 
   /** Control-plane bearer token. Required: the app refuses to start without it. */

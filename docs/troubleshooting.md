@@ -30,6 +30,9 @@ refused the call. `make logs` shows its status:
 - **400 `Model … does not exist`**: the runtime model is not one OpenRouter
   serves. Use `jev-latest` or a pinned version such as `typesafe/jev-1.13`.
 
+On a `laya` model, the call went to your Laya server instead; see
+[Laya troubleshooting](laya.md#troubleshooting).
+
 **A spec is rejected: `uses on_low_confidence: fallback_model`.**
 That action re-asked a chat model and has been removed. Use `human_review`,
 `error` or `default:<option>`.

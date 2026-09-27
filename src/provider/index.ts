@@ -4,6 +4,7 @@
  * calls always go to OpenRouter. Tests swap in a fake.
  */
 import { createOpenRouterProvider } from './openrouter.js';
+import { createLayaProvider } from './laya.js';
 import { decisionProviderFor, notADecisionModel, type DecisionProviderName } from './models.js';
 import { problem } from '../errors.js';
 import type { Provider } from './types.js';
@@ -14,6 +15,7 @@ function createRouter(): Provider {
   const openrouter = createOpenRouterProvider();
   const decisionProviders: Record<DecisionProviderName, Provider['decide']> = {
     openrouter: openrouter.decide,
+    laya: createLayaProvider(),
   };
   return {
     async decide(req) {

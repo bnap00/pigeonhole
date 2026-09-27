@@ -1,0 +1,22 @@
+# Runs `laya` on an NVIDIA GPU. Needs the NVIDIA Container Toolkit. Enable it
+# in .env, next to the profile:
+#
+#   COMPOSE_PROFILES=laya
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
+#
+# cu126 wheels run on any driver that supports CUDA 12.6 or newer (560+). With
+# a 575+ driver, LAYA_TORCH_INDEX=cu130 also works.
+services:
+  laya:
+    build:
+      args:
+        TORCH_INDEX: ${LAYA_TORCH_INDEX:-cu126}
+    environment:
+      LAYA_DEVICE: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

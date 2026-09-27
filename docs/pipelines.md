@@ -15,7 +15,7 @@ input:
   required: [body]
 
 model:
-  runtime: jev-latest          # or pin: typesafe/jev-1.13
+  runtime: jev-latest          # or pin: typesafe/jev-1.13; or laya (docs/laya.md)
   compiler: anthropic/claude-sonnet-5
 
 nodes:
