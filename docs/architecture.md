@@ -50,8 +50,8 @@ the queue. The whole schema is one file, `migrations/001_init.sql`.
 
 Classifications are answered only by **decision models**, never by a chat
 model. `src/provider/models.ts` lists each decision-model family and the
-provider that serves it: Jev on OpenRouter's Decisions API, Laya on a local
-`laya-serve`. `src/provider/index.ts` sends every `decide()` call to the right
+provider that serves it: Jev, Clef and GPT-6 Luna Decisions on OpenRouter's
+Decisions API, Laya on a local `laya-serve`. `src/provider/index.ts` sends every `decide()` call to the right
 provider for its model. Both speak the same wire format, read and written by
 `src/provider/wire.ts`.
 

@@ -44,6 +44,10 @@ export interface EvalReport {
   /** Why they did not, by problem code: provider_error, input_invalid, … */
   error_kinds: Record<string, number>;
   duration_ms: number;
+  /** Per-case latency over the cases that answered, as each classify call saw it. */
+  latency_ms: { p50: number | null; p95: number | null };
+  /** What the answered cases cost, as the providers reported it. */
+  cost_usd: number;
   /** Per output key, and per node. */
   key_accuracy: Record<string, { passed: number; total: number; accuracy: number }>;
   node_accuracy: Record<string, { passed: number; total: number; accuracy: number }>;
@@ -105,6 +109,8 @@ export async function runEval(opts: RunEvalOptions): Promise<EvalReport> {
     errored: 0,
     error_kinds: {},
     duration_ms: 0,
+    latency_ms: { p50: null, p95: null },
+    cost_usd: 0,
     key_accuracy: {},
     node_accuracy: {},
     confusion: {},
@@ -116,6 +122,7 @@ export async function runEval(opts: RunEvalOptions): Promise<EvalReport> {
   };
 
   const confidenceSamples: { confidence: number; correct: boolean }[] = [];
+  const latencies: number[] = [];
   let cursor = 0;
   let done = 0;
 
@@ -134,6 +141,8 @@ export async function runEval(opts: RunEvalOptions): Promise<EvalReport> {
           settings,
         });
         report.resolved_model = result.model;
+        latencies.push(result.latency_ms);
+        report.cost_usd += result.usage.cost_usd ?? 0;
 
         let casePassed = true;
         for (const [key, want] of Object.entries(testCase.expect)) {
@@ -225,6 +234,9 @@ export async function runEval(opts: RunEvalOptions): Promise<EvalReport> {
     bucket.accuracy = bucket.total > 0 ? bucket.passed / bucket.total : 0;
   }
   report.calibration = calibrationCurve(confidenceSamples);
+  latencies.sort((a, b) => a - b);
+  const percentile = (q: number) => (latencies.length ? latencies[Math.min(latencies.length - 1, Math.floor(q * latencies.length))] : null);
+  report.latency_ms = { p50: percentile(0.5), p95: percentile(0.95) };
   report.duration_ms = Date.now() - started;
   return report;
 }

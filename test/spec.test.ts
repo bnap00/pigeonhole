@@ -19,7 +19,7 @@ test('every shipped template parses, lints and round-trips', () => {
     assert.ok((spec.tests ?? []).length >= 10, `${file} ships at least 10 test cases`);
 
     // A template that trips its own linter is a bad example to ship.
-    const blocking = lint(spec).filter((w) => w.code === 'no_catch_all' || w.code === 'no_tests');
+    const blocking = lint(spec).filter((w) => ['no_catch_all', 'no_tests', 'split_criteria'].includes(w.code));
     assert.equal(blocking.length, 0, `${file}: ${JSON.stringify(blocking)}`);
 
     // Round-tripping must not change meaning.
@@ -231,4 +231,22 @@ test('the generated-test schema requires every input field', () => {
   // generated case is rejected before it reaches a model.
   assert.deepEqual(item.properties.input.required, ['post_title', 'post_text']);
   assert.deepEqual(item.properties.expect.required, ['category']);
+});
+
+test('the linter flags option text that a YAML comma split into empty keys', () => {
+  const spec = parseSpecYaml(`
+pigeonhole: 1
+id: split
+nodes:
+  reason:
+    type: choice
+    instructions: Why is it being returned?
+    criteria:
+      damaged: { what: Arrived broken, scuffed or torn. }
+      other: { what: "Anything else, including questions." }
+output: { reason: reason.choice }
+`);
+  const found = lint(spec).filter((w) => w.code === 'split_criteria');
+  assert.equal(found.length, 1);
+  assert.match(found[0].message, /"damaged"/);
 });

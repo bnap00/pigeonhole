@@ -66,7 +66,9 @@ export async function postJson<T>(opts: FetchOptions): Promise<T> {
 
         const text = await res.text().catch(() => '');
         // 4xx other than 429 is our bug or the caller's; retrying cannot help.
-        if (res.status < 500 && res.status !== 429) {
+        // Nor can it for a model that refused a question, which OpenRouter
+        // reports as a 502.
+        if ((res.status < 500 && res.status !== 429) || /refused to answer/.test(text)) {
           throw problem('provider_error', `${opts.label} returned ${res.status}: ${truncate(text)}`, {
             provider_status: res.status,
           });

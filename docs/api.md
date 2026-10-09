@@ -55,7 +55,7 @@ Responses carry `run_id`, `output`, per-node answers with probabilities,
 | Versions | `POST /v1/pipelines/:id/versions` (publish) · `GET /v1/pipelines/:id/versions/:version` · `POST /v1/pipelines/:id/pin` |
 | Compile | `POST /v1/pipelines/:id/compile` · `GET …/compile/:compileId` · `GET …/compile/:compileId/events` (SSE) · `POST …/compile/:compileId/accept` · `GET /v1/pipelines/:id/compiles` |
 | Tests | `POST /v1/pipelines/:id/tests` · `DELETE /v1/pipelines/:id/tests/:testId` |
-| Evals | `POST /v1/pipelines/:id/evals` (`?wait=true` for ≤ 50 cases; `{"target": "working"}` runs the draft if it has unpublished changes, unstored, else the latest version) · `GET …/evals` · `GET …/evals/:evalId` · `POST /v1/pipelines/:id/compare` |
+| Evals | `POST /v1/pipelines/:id/evals` (`?wait=true` for ≤ 50 cases; `{"target": "working"}` runs the draft if it has unpublished changes, unstored, else the latest version) · `GET …/evals` · `GET …/evals/:evalId` · `POST /v1/pipelines/:id/compare` · `POST /v1/pipelines/:id/bench` (`{"model", "concurrency"?}`: one model's accuracy, p50/p95 latency and cost; stores nothing) |
 | Try | `POST /v1/pipelines/:id/try` — one input through the draft if it has unpublished changes, else the latest version; a draft run is not recorded |
 | Review | `GET /v1/pipelines/:id/review` · `POST …/review/:runId/promote` · `GET /v1/pipelines/:id/feedback` |
 | Shadow | `GET/POST /v1/pipelines/:id/shadow` — run a draft beside the live version |
@@ -88,6 +88,7 @@ pigeonhole lint                      # validate local specs
 pigeonhole test                      # non-zero exit on regression — a CI gate
 pigeonhole classify support-triage "my shoes arrived torn"
 pigeonhole diff support-triage --models typesafe/jev-1.13,jev-latest
+pigeonhole bench --models jev-latest,laya,cloudflare/clef   # accuracy, latency, cost
 pigeonhole push / pull               # spec files in git
 ```
 

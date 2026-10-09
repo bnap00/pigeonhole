@@ -49,8 +49,8 @@ nodes:
     instructions: Why does the customer want to return or exchange the item?
     criteria:
       wrong_size: { what: The item does not fit; the customer wants a different size. }
-      wrong_item: { what: The wrong product was sent, not merely the wrong size. }
-      damaged: { what: The item arrived broken, scuffed, torn or otherwise defective. }
+      wrong_item: { what: "The wrong product was sent, not merely the wrong size." }
+      damaged: { what: "The item arrived broken, scuffed, torn or otherwise defective." }
       changed_mind: { what: The item is as described but no longer wanted. }
       other: { what: A return reason that fits none of the above. }
 

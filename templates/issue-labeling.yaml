@@ -47,12 +47,12 @@ nodes:
     type: choice
     instructions: Which part of the project does this issue concern?
     criteria:
-      api: { what: The HTTP API, its routes, request and response shapes, and status codes. }
-      cli: { what: The command line tool, its flags, output and exit codes. }
+      api: { what: "The HTTP API, its routes, request and response shapes, and status codes." }
+      cli: { what: "The command line tool, its flags, output and exit codes." }
       ui: { what: The browser interface. }
-      runtime: { what: Classification execution, the executor, providers and model calls. }
-      infra: { what: Docker, Compose, deployment, migrations, backups, CI. }
-      docs: { what: README, guides and reference documentation. }
+      runtime: { what: "Classification execution, the executor, providers and model calls." }
+      infra: { what: "Docker, Compose, deployment, migrations, backups, CI." }
+      docs: { what: "README, guides and reference documentation." }
       other: { what: An area that fits none of the above. }
 
   is_good_first_issue:

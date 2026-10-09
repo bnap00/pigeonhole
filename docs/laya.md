@@ -96,7 +96,7 @@ pipeline, 74 in all, sent one at a time on the machine above:
 
 | | Jev | Laya, GPU | Laya, CPU (4 threads) |
 | --- | --- | --- | --- |
-| Correct | 69 (93%) | 40 (54%) | 40 (54%) |
+| Correct | 69 (93%) | 41 (55%) | 41 (55%) |
 | Median latency | 340 ms | 100 ms | 2.3 s |
 | p95 latency | 410 ms | 114 ms | 5.2 s |
 | Cost | $0.0027, about $37 per million | none | none |
@@ -105,12 +105,12 @@ pipeline, 74 in all, sent one at a time on the machine above:
 | --- | --- | --- |
 | moderation | 9/10 | 10/10 |
 | email-routing | 9/10 | 6/10 |
-| support-triage | 10/10 | 6/10 |
+| support-triage | 10/10 | 7/10 |
 | issue-labeling | 10/10 | 4/10 |
 | lead-qualification | 9/10 | 4/10 |
 | Reddit self-promotion | 22/24 | 10/24 |
 
-The support-triage cases translated into Hindi: Jev 9/10 at 400 ms, Laya
+The support-triage cases translated into Hindi: Jev 10/10 at 400 ms, Laya
 6/10 at 56 ms on the GPU and 870 ms on the CPU. `laya` sent every one to the
 multilingual checkpoint on its own.
 
@@ -122,6 +122,12 @@ took Laya from 10/24 to 13/24; Jev stayed at 22/24. Forcing
 The comparison favours Jev: the compiler dry-runs every spec's tests against
 Jev and repairs what Jev gets wrong, so these specs were tuned on it.
 
+These are the stock checkpoints, untrained on any of these tasks.
+Support-triage, issue-labeling and the Hindi cases were re-run on
+2026-10-09, after unquoted commas were found cutting some of those templates'
+option descriptions short. For Clef
+and GPT-6 Luna on the same suites, see [Comparing models](comparing-models.md).
+
 ## Limits
 
 - **Short inputs.** The English checkpoint reads 512 tokens, about 320 of them
@@ -131,8 +137,8 @@ Jev and repairs what Jev gets wrong, so these specs were tuned on it.
   roughly 20 options in one `choice` node. `laya-serve` refuses more than 100
   options in a node and more than 32 levels on a scale.
 - **Zero-shot.** The shipped checkpoints are not trained on your task. On the
-  bundled templates' own test cases Laya passes 30 of 50: all of moderation,
-  and 4 to 6 of 10 on the others (see [How it compares](#how-it-compares)). Run `pigeonhole test` before sending
+  bundled templates' own test cases Laya passes 31 of 50: all of moderation,
+  and 4 to 7 of 10 on the others (see [How it compares](#how-it-compares)). Run `pigeonhole test` before sending
   traffic to a pipeline on Laya, and check that its `min_confidence`
   thresholds still route what you expect.
 - **One request at a time.** `laya-serve` runs one forward pass at a time and

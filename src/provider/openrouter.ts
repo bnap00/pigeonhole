@@ -22,6 +22,8 @@ const BASE_URL = 'https://openrouter.ai/api/v1';
 const DECISIONS_URL = 'https://openrouter.ai/api/alpha/decisions';
 /** Jev answers in ~350ms warm; the first call also pays the TLS handshake. */
 const DECISION_TIMEOUT_MS = 5000;
+/** Clef's host on OpenRouter took 2-13 s per call when it was added. */
+const SLOW_DECISION_TIMEOUT_MS = 30_000;
 
 /** Attribution headers, which is how OpenRouter's app rankings see the project. */
 function headers(): Record<string, string> {
@@ -41,19 +43,31 @@ export function createOpenRouterProvider(): Provider {
       if (decisionProviderFor(req.model) !== 'openrouter') {
         throw problem('input_invalid', notADecisionModel(req.model));
       }
-      const raw = await postJson<Record<string, unknown>>({
-        url: DECISIONS_URL,
-        label: 'openrouter decisions',
-        headers: headers(),
-        timeoutMs: req.timeoutMs ?? DECISION_TIMEOUT_MS,
-        maxRetries: 1,
-        body: {
-          model: req.model,
-          state: req.state,
-          questions: toWire(req.questions),
-        },
-      });
-      return readDecisionResponse(raw, req.questions);
+      // GPT-6 Luna can refuse a question, and OpenRouter then fails the whole
+      // call. The refused question is dropped and the rest asked again, so it
+      // alone comes back unanswered and the executor reports it as an error.
+      const questions = { ...req.questions };
+      for (;;) {
+        try {
+          const raw = await postJson<Record<string, unknown>>({
+            url: DECISIONS_URL,
+            label: 'openrouter decisions',
+            headers: headers(),
+            timeoutMs: req.timeoutMs ?? (/^cloudflare\//i.test(req.model) ? SLOW_DECISION_TIMEOUT_MS : DECISION_TIMEOUT_MS),
+            maxRetries: 1,
+            body: {
+              model: req.model,
+              state: req.state,
+              questions: toWire(questions),
+            },
+          });
+          return readDecisionResponse(raw, questions);
+        } catch (err) {
+          const refused = (err as Error).message.match(/refused to answer question \\?"([^"\\]+)/)?.[1];
+          if (!refused || !(refused in questions) || Object.keys(questions).length === 1) throw err;
+          delete questions[refused];
+        }
+      }
     },
 
     async chat(req: ChatRequest): Promise<ChatResponse> {

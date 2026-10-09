@@ -214,6 +214,20 @@ export function lint(spec: PipelineSpec): LintWarning[] {
           message: `options ${thin.map((t) => `"${t}"`).join(', ')} on "${id}" have little or no definition. Neighbouring options separate better with \`what\` and \`not_for\`.`,
         });
       }
+      // `{ what: Broken, scuffed or torn. }` is a YAML flow mapping, and its
+      // commas split the sentence into empty keys. The model then sees half a
+      // definition, and nothing else notices.
+      const split = options.filter((o) => {
+        const c = node.criteria[o];
+        return !!c && typeof c === 'object' && !Array.isArray(c) && Object.values(c).some((v) => v === null);
+      });
+      if (split.length > 0) {
+        warnings.push({
+          node: id,
+          code: 'split_criteria',
+          message: `options ${split.map((t) => `"${t}"`).join(', ')} on "${id}" have keys with no value, usually an unquoted comma inside \`{ what: ... }\`. Quote the text.`,
+        });
+      }
       if (node.min_confidence !== undefined && node.on_low_confidence === undefined) {
         warnings.push({
           node: id,

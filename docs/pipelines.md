@@ -15,7 +15,7 @@ input:
   required: [body]
 
 model:
-  runtime: jev-latest          # or pin: typesafe/jev-1.13; or laya (docs/laya.md)
+  runtime: jev-latest          # or pin: typesafe/jev-1.13; or laya (docs/laya.md); or cloudflare/clef, openai/gpt-6-luna-decisions
   compiler: anthropic/claude-sonnet-5
 
 nodes:

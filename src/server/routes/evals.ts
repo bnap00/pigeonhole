@@ -116,6 +116,23 @@ export async function registerEvalRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
+  /**
+   * One model on a version's test set, for comparing providers: accuracy,
+   * per-case latency and cost. `pigeonhole bench` calls it. Nothing is stored,
+   * so it moves no version score and no drift baseline. `concurrency: 1` sends
+   * the cases one at a time, so latency is not measured under load.
+   */
+  app.post<{ Params: { id: string }; Body: Body }>('/v1/pipelines/:id/bench', async (req) => {
+    const model = req.body?.model;
+    if (typeof model !== 'string' || !model) throw problem('input_invalid', 'give the `model` to bench');
+    const serving = await repo.resolveServingVersion(req.params.id, req.body?.version ?? null);
+    const cases = await collectCases(req.params.id, serving.spec);
+    if (cases.length === 0) throw problem('conflict', 'this pipeline has no test cases to bench on');
+    const concurrency = Math.min(Math.max(Number(req.body?.concurrency ?? 1), 1), 8);
+    const report = await runEval({ spec: serving.spec, version: serving.version, cases, model, concurrency });
+    return { pipeline: req.params.id, version: serving.version, model, ...summary(report), errors: report.errors.slice(0, 5) };
+  });
+
   // ---------------------------------------------------------------- analytics
 
   app.get<{ Params: { id: string }; Querystring: { days?: string } }>(
@@ -153,6 +170,8 @@ function summary(report: Awaited<ReturnType<typeof runEval>>) {
     key_accuracy: report.key_accuracy,
     calibration: report.calibration,
     duration_ms: report.duration_ms,
+    latency_ms: report.latency_ms,
+    cost_usd: report.cost_usd,
     // `errors` is truncated for the payload, so the count travels separately.
     // Reporting `errors.length` to the caller would say "10 of 25 cases could
     // not run" for a suite where all 25 failed, which reads as a partial

@@ -32,6 +32,20 @@ const FAMILIES: DecisionFamily[] = [
     examples: 'jev-latest, or a pinned version such as typesafe/jev-1.13',
   },
   {
+    // Cloudflare's open decision models, served on OpenRouter's Decisions API
+    name: 'Clef',
+    provider: 'openrouter',
+    pattern: /^cloudflare\/clef(?:-flash)?$/i,
+    examples: 'cloudflare/clef or cloudflare/clef-flash',
+  },
+  {
+    // OpenAI's Decisions API, through OpenRouter. The resolved id carries a date.
+    name: 'GPT-6 Luna Decisions',
+    provider: 'openrouter',
+    pattern: /^openai\/gpt-6-luna-decisions(?:-\d{8})?$/i,
+    examples: 'openai/gpt-6-luna-decisions',
+  },
+  {
     // laya (the server picks a checkpoint per request), or one checkpoint:
     // laya-english, laya-multilingual, laya-typed-decisions
     name: 'Laya',

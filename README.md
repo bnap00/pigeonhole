@@ -24,6 +24,8 @@ away.
 
 Two containers: the app, and Postgres. One model provider: OpenRouter. To
 classify on your own machine instead, add a third: [Laya](docs/laya.md).
+OpenRouter also serves Cloudflare's Clef and OpenAI's GPT-6 Luna as decision
+models; [Comparing models](docs/comparing-models.md) shows how they did.
 
 ---
 
@@ -90,8 +92,9 @@ and MCP.
 
 **Not there yet:**
 
-- Only two decision model families: Jev on OpenRouter, and Laya self-hosted
-  ([docs/laya.md](docs/laya.md)). The compiler always needs OpenRouter.
+- Four decision model families: Jev, Clef and GPT-6 Luna Decisions on
+  OpenRouter, and Laya self-hosted ([docs/laya.md](docs/laya.md)). The
+  compiler always needs OpenRouter.
 - Single instance only. Rate limits and caches live in memory.
 - No automatic backups, no TLS, no multi-user accounts: one admin token.
 - The API and spec format may change between versions without a migration
@@ -143,6 +146,7 @@ reverse proxy in front before exposing it beyond the machine.
 | [Evals and drift](docs/evals.md) | Tests, accuracy, calibration, drift alerts |
 | [API and clients](docs/api.md) | REST, CLI, MCP, generated clients |
 | [Laya](docs/laya.md) | Classifying locally with Laya, on CPU or GPU |
+| [Comparing models](docs/comparing-models.md) | `pigeonhole bench`, and Jev, Laya, Clef and GPT-6 Luna on the same test cases |
 | [Architecture](docs/architecture.md) | How it works, and how to add a model |
 | [Alternative stacks](docs/alternative-stacks.md) | Ideas for running it elsewhere, such as Cloudflare Workers (not built) |
 | [Troubleshooting](docs/troubleshooting.md) | The problems you are likely to hit first |

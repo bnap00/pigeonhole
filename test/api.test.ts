@@ -176,6 +176,22 @@ describe('control plane', () => {
     assert.ok(Array.isArray(report.calibration));
   });
 
+  test('a bench reports latency and cost per model, and stores nothing', async (t) => {
+    if (!available) return t.skip('no database');
+    const before = (await app.inject({ method: 'GET', url: `/v1/pipelines/${id}/evals`, headers: auth })).json().evals.length;
+    const res = await app.inject({
+      method: 'POST', url: `/v1/pipelines/${id}/bench`, headers: auth, payload: { model: 'jev-latest' },
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const r = res.json();
+    assert.equal(r.model, 'jev-latest');
+    assert.ok(r.cases >= 1);
+    assert.equal(typeof r.latency_ms.p50, 'number');
+    assert.equal(typeof r.cost_usd, 'number');
+    const after = (await app.inject({ method: 'GET', url: `/v1/pipelines/${id}/evals`, headers: auth })).json().evals.length;
+    assert.equal(after, before);
+  });
+
   test('a pipeline reports the model its served version runs on', async (t) => {
     if (!available) return t.skip('no database');
     const res = await app.inject({ method: 'GET', url: `/v1/pipelines/${id}`, headers: auth });

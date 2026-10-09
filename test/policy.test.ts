@@ -80,7 +80,7 @@ test('Jev model names are decision models; chat models are not', () => {
   for (const m of ['jev', 'jev-latest', 'jev-1.13.0', 'typesafe/jev-1.13', 'typesafe/jev-1.13-20260917', 'JEV-LATEST']) {
     assert.ok(isDecisionModel(m), m);
   }
-  for (const m of ['openai/gpt-4o-mini', 'anthropic/claude-sonnet-5', 'jevil', 'jev-latest:free', 'my-jev', 'jev--x', '']) {
+  for (const m of ['openai/gpt-6-luna', 'cloudflare/clef-pro', 'openai/gpt-4o-mini', 'anthropic/claude-sonnet-5', 'jevil', 'jev-latest:free', 'my-jev', 'jev--x', '']) {
     assert.ok(!isDecisionModel(m), m);
   }
 });
@@ -91,6 +91,12 @@ test('Laya model names are decision models', () => {
   }
   for (const m of ['laya-rl-agent', 'layla', 'laya-latest', 'someone/laya', 'laya-']) {
     assert.ok(!isDecisionModel(m), m);
+  }
+});
+
+test('Clef and GPT-6 Luna Decisions on OpenRouter are decision models', () => {
+  for (const m of ['cloudflare/clef', 'cloudflare/clef-flash', 'openai/gpt-6-luna-decisions', 'openai/gpt-6-luna-decisions-20261006']) {
+    assert.ok(isDecisionModel(m), m);
   }
 });
 
@@ -109,6 +115,42 @@ test('the provider refuses to send a chat model to the Decisions API', async () 
     assert.equal(sent, false, 'the refusal happens before any request');
   } finally {
     globalThis.fetch = realFetch;
+  }
+});
+
+test('a question the model refuses comes back unanswered; the rest are asked again', async () => {
+  const { config } = await import('../src/config.ts');
+  const key = config.openrouterApiKey;
+  Object.assign(config, { openrouterApiKey: 'test' });
+  const realFetch = globalThis.fetch;
+  const asked: string[][] = [];
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    const questions = Object.keys(JSON.parse(String(init.body)).questions);
+    asked.push(questions);
+    if (questions.includes('first_issue')) {
+      return new Response('{"error":{"message":"OpenAI refused to answer question \\"first_issue\\"","code":502}}', { status: 502 });
+    }
+    return new Response(JSON.stringify({
+      model: 'openai/gpt-6-luna-decisions-20261006',
+      answers: { kind: { type: 'choice', choice: 'bug', probabilities: { bug: 0.9, feature: 0.1 }, confidence: 0.8 } },
+      usage: { input_tokens: 100, cost: 0.00001 },
+    }));
+  }) as typeof fetch;
+  try {
+    const res = await createOpenRouterProvider().decide({
+      model: 'openai/gpt-6-luna-decisions',
+      state: 'Crash on startup',
+      questions: {
+        kind: { type: 'choice', instructions: 'What kind?', criteria: { bug: 'A defect', feature: 'A request' } },
+        first_issue: { type: 'noul', instructions: 'Good first issue?' },
+      },
+    });
+    assert.equal(res.answers.kind.choice, 'bug');
+    assert.equal(res.answers.first_issue, undefined);
+    assert.deepEqual(asked.at(-1), ['kind']);
+  } finally {
+    globalThis.fetch = realFetch;
+    Object.assign(config, { openrouterApiKey: key });
   }
 });
 

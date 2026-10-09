@@ -108,6 +108,7 @@ Running
   classify <pipeline> "<text>"         One-off classification
   test [pipeline]                      Run test cases; non-zero exit on regression (for CI)
   diff <pipeline> --models a,b         Compare two models or versions on the test set
+  bench [pipeline…] --models a,b,c     Accuracy, latency and cost per model, one case at a time
 
 Syncing
   push [pipeline]                      Publish local spec files as new versions
@@ -276,6 +277,44 @@ Options
     if (delta < -3) {
       out('  this is a regression beyond the default drift threshold');
       process.exit(1);
+    }
+  },
+
+  async bench() {
+    const models = String(args.flags.models ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (!models.length) die('usage: pigeonhole bench [pipeline…] --models jev-latest,clef-flash,gpt-6-luna');
+    const ids = args.positional.length
+      ? args.positional
+      : (await call<{ pipelines: { id: string }[] }>('/v1/pipelines')).pipelines.map((p) => p.id);
+    const concurrency = Number(args.flags.concurrency ?? 1);
+
+    const totals = new Map(models.map((m) => [m, { passed: 0, cases: 0, errored: 0, cost: 0, p50: [] as number[], p95: [] as number[] }]));
+    const rows: any[] = [];
+    for (const id of ids) {
+      for (const model of models) {
+        const r = await call<any>(`/v1/pipelines/${id}/bench`, { method: 'POST', body: JSON.stringify({ model, concurrency }) });
+        rows.push(r);
+        const t = totals.get(model)!;
+        t.passed += r.passed;
+        t.cases += r.cases;
+        t.errored += r.errored;
+        t.cost += r.cost_usd;
+        if (r.latency_ms.p50 !== null) t.p50.push(r.latency_ms.p50);
+        if (r.latency_ms.p95 !== null) t.p95.push(r.latency_ms.p95);
+        if (!args.flags.json) out(`${id.padEnd(24)} ${model.padEnd(22)} ${String(r.passed).padStart(3)}/${r.cases}  p50 ${r.latency_ms.p50 ?? '-'}ms  p95 ${r.latency_ms.p95 ?? '-'}ms  $${r.cost_usd.toFixed(5)}  ${r.resolved_model}${r.errored ? `  (${r.errored} errored: ${r.errors[0]})` : ''}`);
+      }
+    }
+    if (args.flags.json) {
+      out(JSON.stringify(rows, null, 2));
+      return;
+    }
+    // Per-pipeline medians, so a long suite does not outvote a short one.
+    const median = (xs: number[]) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] : null);
+    out('\nall pipelines');
+    for (const [model, t] of totals) {
+      const pct = t.cases ? ((t.passed / t.cases) * 100).toFixed(0) : '-';
+      const perMillion = t.cases ? (t.cost / t.cases) * 1e6 : 0;
+      out(`  ${model.padEnd(22)} ${t.passed}/${t.cases} (${pct}%)  median of p50 ${median(t.p50) ?? '-'}ms  of p95 ${median(t.p95) ?? '-'}ms  $${t.cost.toFixed(4)}, about $${perMillion.toFixed(0)} per million${t.errored ? `  ${t.errored} errored` : ''}`);
     }
   },
 
