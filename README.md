@@ -156,6 +156,14 @@ reverse proxy in front before exposing it beyond the machine.
 Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 Report security issues privately: [SECURITY.md](SECURITY.md).
 
+A [pre-commit](https://pre-commit.com) hook runs Gitleaks so a secret never
+reaches a commit. Install it once per clone:
+
+```bash
+pipx install pre-commit   # or: brew install pre-commit
+pre-commit install
+```
+
 ## License
 
 [Apache 2.0](LICENSE)
