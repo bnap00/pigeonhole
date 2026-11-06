@@ -1,0 +1,48 @@
+# Weekly version updates, minor + patch grouped into one PR per ecosystem.
+# The cooldown skips releases younger than 3 days (matches min-release-age in
+# .npmrc); security updates ignore it and arrive as soon as an advisory lands.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    cooldown:
+      default-days: 3
+
+  # The app image (Dockerfile) and the optional Laya image (docker/laya).
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /docker/laya
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    cooldown:
+      default-days: 3
+
+  # postgres in docker-compose.yml.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    cooldown:
+      default-days: 3
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    cooldown:
+      default-days: 3
