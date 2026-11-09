@@ -38,7 +38,7 @@ services:
       options: { max-size: "10m", max-file: "3" }
 
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: pigeonhole
