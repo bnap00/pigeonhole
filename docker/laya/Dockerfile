@@ -4,7 +4,7 @@
 #
 # CPU by default. docker-compose.gpu.yml rebuilds it with CUDA wheels.
 
-FROM python:3.11-slim-bookworm
+FROM python:3.15-slim-bookworm
 
 ARG TORCH_INDEX=cpu
 ARG TORCH_VERSION=2.14.0
