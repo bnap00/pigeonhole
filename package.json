@@ -19,11 +19,11 @@
     "test:unit": "node --import tsx --test test/expr.test.ts test/spec.test.ts test/executor.test.ts test/evals.test.ts test/policy.test.ts"
   },
   "dependencies": {
-    "@fastify/static": "^10.1.8",
+    "@fastify/static": "^10.1.10",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
-    "fastify": "^5.12.7",
-    "pg": "^8.14.1",
+    "fastify": "^5.12.8",
+    "pg": "^8.23.1",
     "yaml": "^2.7.0"
   },
   "devDependencies": {
