@@ -1,12 +1,12 @@
 # The app image: API, UI, MCP, job queue and scheduler in one Node process.
 # The UI has no build step; the TypeScript is compiled in the build stage.
 
-FROM node:24-alpine AS deps
+FROM node:26-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
-FROM node:24-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --no-audit --no-fund
@@ -15,7 +15,7 @@ COPY src ./src
 COPY scripts ./scripts
 RUN npm run build
 
-FROM node:24-alpine AS runtime
+FROM node:26-alpine AS runtime
 WORKDIR /app
 
 # tini reaps zombies and forwards signals, so SIGTERM reaches Node and the
